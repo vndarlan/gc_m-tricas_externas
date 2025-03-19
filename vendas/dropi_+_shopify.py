@@ -16,10 +16,12 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from webdriver_manager.chrome import ChromeDriverManager
 from db_utils import get_db_connection
+from db_utils import init_db, get_db_connection
 from selenium_utils import setup_selenium_for_cloud
 import matplotlib.pyplot as plt
 import numpy as np
 import altair as alt
+import psycopg2
 
 # Configuração do logger
 logging.basicConfig(level=logging.INFO)
@@ -158,8 +160,21 @@ def init_db():
 # Carregar lista de lojas
 def load_stores():
     """Carrega a lista de lojas cadastradas."""
-    conn = get_db_connection()
+    conn = sqlite3.connect("dashboard.db")
     c = conn.cursor()
+    
+    # Garantir que as tabelas existam
+    try:
+        c.execute("SELECT id, name FROM stores")
+    except (sqlite3.OperationalError, psycopg2.errors.UndefinedTable):
+        # Se a tabela não existir, inicialize o banco de dados
+        conn.close()
+        init_db()
+        # Reabrir conexão
+        conn = sqlite3.connect("dashboard.db")
+        c = conn.cursor()
+    
+    # Agora podemos consultar com segurança
     c.execute("SELECT id, name FROM stores")
     stores = c.fetchall()
     conn.close()
