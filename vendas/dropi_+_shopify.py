@@ -1995,14 +1995,19 @@ def update_dropi_data_silent(store, start_date, end_date):
         
         # Limpar dados antigos e salvar os novos
         save_dropi_metrics_to_db(store["id"], date_str, product_data)
-        
+
         # Verificar após salvar (depuração)
-        conn = get_db_connection()
-        c = conn.cursor()
-        c.execute("SELECT COUNT(*) FROM dropi_metrics WHERE store_id = ? AND date = ?", (store["id"], date_str))
-        count = c.fetchone()[0]
-        logger.info(f"Verificação: {count} produtos salvos no banco para a data {date_str}")
-        conn.close()
+        try:
+            from db_utils import execute_query
+            result = execute_query(
+                "SELECT COUNT(*) FROM dropi_metrics WHERE store_id = ? AND date = ?", 
+                (store["id"], date_str),
+                fetch_type='one'
+            )
+            count = result[0] if result else 0
+            logger.info(f"Verificação: {count} produtos salvos no banco para a data {date_str}")
+        except Exception as e:
+            logger.error(f"Erro na verificação de contagem: {str(e)}")
         
         driver.quit()
         return True
