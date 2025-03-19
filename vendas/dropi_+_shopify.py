@@ -2067,12 +2067,11 @@ def store_dashboard(store):
                 product_total, product_processed, product_delivered, product_url_map, product_value = process_shopify_products(orders, product_urls)
                 
                 # Limpar dados antigos para esse período
-                conn = get_db_connection()
-                c = conn.cursor()
-                c.execute("DELETE FROM product_metrics WHERE store_id = ? AND date BETWEEN ? AND ?", 
-                        (store["id"], start_date_str, end_date_str))
-                conn.commit()
-                conn.close()
+                try:
+                    query = "DELETE FROM product_metrics WHERE store_id = ? AND date BETWEEN ? AND ?"
+                    execute_query(query, (store["id"], start_date_str, end_date_str))
+                except Exception as e:
+                    st.error(f"Erro ao limpar dados antigos: {str(e)}")
                 
                 # Salvar os novos dados
                 save_metrics_to_db(store["id"], start_date_str, product_total, product_processed, product_delivered, product_url_map, product_value)
