@@ -440,3 +440,58 @@ def update_dropi_metrics_schema():
         conn.rollback()
     finally:
         conn.close()
+
+def delete_store_by_id(store_id):
+    """
+    Remove uma loja e todos os seus dados relacionados do banco de dados.
+    
+    Args:
+        store_id: ID da loja a ser removida
+        
+    Returns:
+        Tuple: (sucesso, mensagem)
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    try:
+        # Iniciar transação
+        if is_railway_environment():
+            cursor.execute("BEGIN")
+        else:
+            cursor.execute("BEGIN TRANSACTION")
+        
+        # Excluir dados relacionados primeiro para manter integridade referencial
+        tables = ["product_metrics", "dropi_metrics", "product_effectiveness"]
+        
+        for table in tables:
+            # Adaptar conforme o banco de dados
+            query = f"DELETE FROM {table} WHERE store_id = ?"
+            if is_railway_environment():
+                query = query.replace("?", "%s")
+            
+            cursor.execute(query, (store_id,))
+        
+        # Por fim, excluir a loja
+        query = "DELETE FROM stores WHERE id = ?"
+        if is_railway_environment():
+            query = query.replace("?", "%s")
+        
+        cursor.execute(query, (store_id,))
+        
+        # Contar registros afetados
+        affected_rows = cursor.rowcount
+        
+        # Confirmar transação
+        conn.commit()
+        
+        return True, f"Loja excluída com sucesso! ({affected_rows} registros afetados)"
+    
+    except Exception as e:
+        # Reverter em caso de erro
+        conn.rollback()
+        logger.error(f"Erro ao excluir loja: {str(e)}")
+        return False, f"Erro ao excluir loja: {str(e)}"
+    
+    finally:
+        conn.close()
