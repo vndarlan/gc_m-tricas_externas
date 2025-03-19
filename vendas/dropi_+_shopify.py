@@ -223,14 +223,22 @@ def save_store(name, shop_name, access_token, dropi_url="", dropi_username="", d
     import uuid
     store_id = str(uuid.uuid4())
     
+    # Usar nossa função de utilidade
+    from db_utils import get_db_connection, adapt_query
     conn = get_db_connection()
-    c = conn.cursor()
-    c.execute(
-        """INSERT INTO stores 
-           (id, name, shop_name, access_token, dropi_url, dropi_username, dropi_password, currency_from, currency_to) 
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+    cursor = conn.cursor()
+    
+    query = adapt_query("""
+        INSERT INTO stores 
+        (id, name, shop_name, access_token, dropi_url, dropi_username, dropi_password, currency_from, currency_to) 
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """)
+    
+    cursor.execute(
+        query,
         (store_id, name, shop_name, access_token, dropi_url, dropi_username, dropi_password, currency_from, currency_to)
     )
+    
     conn.commit()
     conn.close()
     return store_id
@@ -238,10 +246,17 @@ def save_store(name, shop_name, access_token, dropi_url="", dropi_username="", d
 # Função para obter detalhes da loja
 def get_store_details(store_id):
     """Obtém os detalhes de uma loja específica."""
+    from db_utils import get_db_connection, adapt_query
     conn = get_db_connection()
-    c = conn.cursor()
-    c.execute("SELECT name, shop_name, access_token, dropi_url, dropi_username, dropi_password, currency_from, currency_to FROM stores WHERE id = ?", (store_id,))
-    store = c.fetchone()
+    cursor = conn.cursor()
+    
+    query = adapt_query("""
+        SELECT name, shop_name, access_token, dropi_url, dropi_username, dropi_password, currency_from, currency_to 
+        FROM stores WHERE id = ?
+    """)
+    
+    cursor.execute(query, (store_id,))
+    store = cursor.fetchone()
     conn.close()
     
     if store:
@@ -496,38 +511,49 @@ def process_shopify_products(orders, product_urls):
 
 def save_metrics_to_db(store_id, date, product_total, product_processed, product_delivered, product_url_map, product_value):
     """Salva as métricas no banco de dados."""
+    from db_utils import get_db_connection, adapt_query
     conn = get_db_connection()
-    c = conn.cursor()
+    cursor = conn.cursor()
     
     # Verificar se a coluna total_value existe
     try:
-        c.execute("SELECT total_value FROM product_metrics LIMIT 1")
-    except sqlite3.OperationalError:
-        # Adicionar a coluna se não existir
-        c.execute("ALTER TABLE product_metrics ADD COLUMN total_value REAL DEFAULT 0")
-        conn.commit()
+        cursor.execute("SELECT total_value FROM product_metrics LIMIT 1")
+    except:
+        # Adicionar a coluna se não existir (sintaxe compatível com ambos)
+        try:
+            cursor.execute("ALTER TABLE product_metrics ADD COLUMN total_value REAL DEFAULT 0")
+            conn.commit()
+        except:
+            # Pode já existir no PostgreSQL
+            conn.rollback()
+    
+    # Adaptar a query para o banco correto
+    query = adapt_query("""
+        INSERT INTO product_metrics 
+        (store_id, date, product, product_url, total_orders, processed_orders, delivered_orders, total_value)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(store_id, date, product) DO UPDATE SET
+        product_url = excluded.product_url,
+        total_orders = excluded.total_orders,
+        processed_orders = excluded.processed_orders,
+        delivered_orders = excluded.delivered_orders,
+        total_value = excluded.total_value
+    """)
     
     for product in product_total:
-        c.execute("""
-            INSERT INTO product_metrics 
-            (store_id, date, product, product_url, total_orders, processed_orders, delivered_orders, total_value)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(store_id, date, product) DO UPDATE SET
-            product_url = excluded.product_url,
-            total_orders = excluded.total_orders,
-            processed_orders = excluded.processed_orders,
-            delivered_orders = excluded.delivered_orders,
-            total_value = excluded.total_value
-        """, (
-            store_id,
-            date, 
-            product,
-            product_url_map.get(product, ""),
-            product_total.get(product, 0),
-            product_processed.get(product, 0),
-            product_delivered.get(product, 0),
-            product_value.get(product, 0)
-        ))
+        cursor.execute(
+            query,
+            (
+                store_id,
+                date, 
+                product,
+                product_url_map.get(product, ""),
+                product_total.get(product, 0),
+                product_processed.get(product, 0),
+                product_delivered.get(product, 0),
+                product_value.get(product, 0)
+            )
+        )
     
     conn.commit()
     conn.close()
@@ -1394,17 +1420,18 @@ def extract_product_data(driver, logger):
 
 def save_dropi_metrics_to_db(store_id, date, products_data):
     """Save DroPi product metrics to the database."""
+    from db_utils import get_db_connection, adapt_query
     conn = get_db_connection()
-    c = conn.cursor()
+    cursor = conn.cursor()
     
     try:
         # Iniciar uma transação para garantir operação atômica
         conn.execute("BEGIN TRANSACTION")
         
         # Remover dados existentes para esta loja e data
-        logger.info(f"Removendo dados existentes para store_id={store_id}, date={date}")
-        c.execute("DELETE FROM dropi_metrics WHERE store_id = ? AND date = ?", (store_id, date))
-        logger.info(f"Removidas {c.rowcount} linhas existentes")
+        delete_query = adapt_query("DELETE FROM dropi_metrics WHERE store_id = ? AND date = ?")
+        cursor.execute(delete_query, (store_id, date))
+        logger.info(f"Removidas {cursor.rowcount if hasattr(cursor, 'rowcount') else '?'} linhas existentes")
         
         # Verificar se há produtos duplicados e agrupá-los
         product_names = {}
@@ -1419,27 +1446,33 @@ def save_dropi_metrics_to_db(store_id, date, products_data):
             else:
                 product_names[product_name] = product
         
-        # Inserir dados com INSERT OR REPLACE para evitar erros de chave duplicada
+        # Adaptar a query para o banco correto
+        insert_query = adapt_query("""
+            INSERT INTO dropi_metrics 
+            (store_id, date, product, provider, stock, orders_count, orders_value, 
+             transit_count, transit_value, delivered_count, delivered_value, profits)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """)
+        
+        # Inserir dados
         for product_name, product in product_names.items():
-            c.execute("""
-                INSERT OR REPLACE INTO dropi_metrics 
-                (store_id, date, product, provider, stock, orders_count, orders_value, 
-                 transit_count, transit_value, delivered_count, delivered_value, profits)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
-                store_id,
-                date, 
-                product_name,
-                product["provider"],
-                product["stock"],
-                product["orders_count"],
-                product["orders_value"],
-                product["transit_count"],
-                product["transit_value"],
-                product["delivered_count"],
-                product["delivered_value"],
-                product["profits"]
-            ))
+            cursor.execute(
+                insert_query,
+                (
+                    store_id,
+                    date, 
+                    product_name,
+                    product["provider"],
+                    product["stock"],
+                    product["orders_count"],
+                    product["orders_value"],
+                    product["transit_count"],
+                    product["transit_value"],
+                    product["delivered_count"],
+                    product["delivered_value"],
+                    product["profits"]
+                )
+            )
             logger.info(f"Inserido/atualizado produto: {product_name}")
         
         # Confirmar a transação
@@ -1765,6 +1798,26 @@ def display_dropi_data(store_id, date_str):
         st.info(f"Não há dados disponíveis da DroPi para a data {date_str}.")
         return pd.DataFrame()
 
+def adapt_upsert_query(base_query, update_columns, key_columns):
+    """
+    Adapta a sintaxe de UPSERT/ON CONFLICT para funcionar em ambos PostgreSQL e SQLite.
+    
+    Args:
+        base_query: Query INSERT base
+        update_columns: Lista de colunas a serem atualizadas em caso de conflito
+        key_columns: Lista de colunas que compõem a chave primária
+    """
+    if os.getenv("DATABASE_URL"):
+        # PostgreSQL
+        conflict_columns = ", ".join(key_columns)
+        update_clause = ", ".join([f"{col} = EXCLUDED.{col}" for col in update_columns])
+        
+        return f"{base_query} ON CONFLICT ({conflict_columns}) DO UPDATE SET {update_clause}"
+    else:
+        # SQLite
+        return f"{base_query} ON CONFLICT({', '.join(key_columns)}) DO UPDATE SET " + \
+               ", ".join([f"{col} = excluded.{col}" for col in update_columns])
+
 def display_dropi_chart(data):
     """Exibe gráfico interativo para os dados DroPi com barras empilhadas por produto."""
     if not data.empty:
@@ -1839,16 +1892,23 @@ def get_saved_effectiveness(store_id):
 
 def save_general_effectiveness(store_id, product, value):
     """Save a manually entered general effectiveness value."""
+    from db_utils import get_db_connection, adapt_query
     conn = get_db_connection()
-    c = conn.cursor()
+    cursor = conn.cursor()
     
     current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     
-    c.execute("""
-        INSERT OR REPLACE INTO product_effectiveness 
+    # Adaptar a query para o banco correto
+    query = adapt_query("""
+        INSERT INTO product_effectiveness 
         (store_id, product, general_effectiveness, last_updated)
         VALUES (?, ?, ?, ?)
-    """, (store_id, product, value, current_time))
+        ON CONFLICT(store_id, product) DO UPDATE SET
+        general_effectiveness = EXCLUDED.general_effectiveness,
+        last_updated = EXCLUDED.last_updated
+    """)
+    
+    cursor.execute(query, (store_id, product, value, current_time))
     
     conn.commit()
     conn.close()

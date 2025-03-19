@@ -24,6 +24,14 @@ def get_db_connection():
         except Exception as e:
             st.error(f"Erro ao conectar ao SQLite: {str(e)}")
             raise e
+        
+def adapt_query(query):
+    """Adapta os placeholders de query para o banco de dados correto."""
+    if os.getenv("DATABASE_URL"):
+        # PostgreSQL usa %s
+        return query.replace("?", "%s")
+    # SQLite permanece com ?
+    return query
 
 def init_db():
     """Inicializa as tabelas no banco de dados."""
