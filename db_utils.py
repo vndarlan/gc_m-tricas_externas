@@ -2,36 +2,134 @@ import os
 import psycopg2
 import sqlite3
 import streamlit as st
+from datetime import datetime
+import logging
+
+# Configuração de logger
+logger = logging.getLogger("db_utils")
+
+def is_railway_environment():
+    """Verifica se estamos rodando no Railway."""
+    return os.getenv("RAILWAY_ENVIRONMENT") is not None or os.getenv("DATABASE_URL") is not None
 
 def get_db_connection():
-    """Retorna uma conexão com o banco de dados (PostgreSQL no Railway, SQLite localmente)."""
-    # Verificar se estamos no Railway (ambiente de produção)
-    database_url = os.getenv("DATABASE_URL")
-    
-    if database_url:
-        # Estamos no Railway, usar PostgreSQL
+    """Retorna uma conexão com o banco de dados."""
+    if is_railway_environment():
+        # Ambiente Railway - PostgreSQL
         try:
+            database_url = os.getenv("DATABASE_URL")
+            if not database_url:
+                st.error("DATABASE_URL não encontrada no ambiente Railway")
+                raise ValueError("DATABASE_URL não encontrada")
+                
             conn = psycopg2.connect(database_url)
             return conn
         except Exception as e:
             st.error(f"Erro ao conectar ao PostgreSQL: {str(e)}")
             raise e
     else:
-        # Ambiente local, usar SQLite
+        # Ambiente local - SQLite
         try:
             conn = sqlite3.connect("dashboard.db")
             return conn
         except Exception as e:
             st.error(f"Erro ao conectar ao SQLite: {str(e)}")
             raise e
+
+def execute_query(query, params=None, fetch_type=None):
+    """
+    Executa uma query adaptando-a ao banco de dados correto.
+    
+    Args:
+        query: A consulta SQL com placeholders '?'
+        params: Tupla de parâmetros para a consulta
+        fetch_type: 'one', 'all', ou None para não buscar resultados
         
-def adapt_query(query):
-    """Adapta os placeholders de query para o banco de dados correto."""
-    if os.getenv("DATABASE_URL"):
-        # PostgreSQL usa %s
-        return query.replace("?", "%s")
-    # SQLite permanece com ?
-    return query
+    Returns:
+        Resultados da consulta ou None se fetch_type=None
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    try:
+        # Adaptar a query para o banco correto
+        if is_railway_environment():
+            # PostgreSQL usa %s como placeholder
+            adapted_query = query.replace("?", "%s")
+        else:
+            # SQLite mantém ? como placeholder
+            adapted_query = query
+        
+        # Executar a consulta
+        if params:
+            cursor.execute(adapted_query, params)
+        else:
+            cursor.execute(adapted_query)
+        
+        # Buscar resultados se necessário
+        if fetch_type == 'one':
+            result = cursor.fetchone()
+        elif fetch_type == 'all':
+            result = cursor.fetchall()
+        else:
+            result = None
+            conn.commit()
+        
+        return result
+    except Exception as e:
+        logger.error(f"Erro ao executar query: {str(e)}")
+        conn.rollback()
+        raise e
+    finally:
+        conn.close()
+
+def execute_upsert(table, data, keys):
+    """
+    Executa uma operação UPSERT (INSERT or UPDATE) adaptada ao banco de dados.
+    
+    Args:
+        table: Nome da tabela
+        data: Dicionário com os dados a serem inseridos/atualizados
+        keys: Lista de colunas que formam a chave primária
+    """
+    columns = list(data.keys())
+    values = list(data.values())
+    
+    placeholders = ["?"] * len(columns)
+    
+    # Construir a consulta base
+    query = f"INSERT INTO {table} ({', '.join(columns)}) VALUES ({', '.join(placeholders)})"
+    
+    # Adaptar para UPSERT conforme o banco
+    if is_railway_environment():
+        # PostgreSQL
+        conflict_cols = ", ".join(keys)
+        update_cols = [c for c in columns if c not in keys]
+        update_clause = ", ".join([f"{c} = EXCLUDED.{c}" for c in update_cols])
+        
+        query = query.replace("?", "%s")
+        query += f" ON CONFLICT ({conflict_cols}) DO UPDATE SET {update_clause}"
+    else:
+        # SQLite
+        conflict_cols = ", ".join(keys)
+        update_cols = [c for c in columns if c not in keys]
+        update_clause = ", ".join([f"{c} = excluded.{c}" for c in update_cols])
+        
+        query += f" ON CONFLICT({conflict_cols}) DO UPDATE SET {update_clause}"
+    
+    # Executar
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    try:
+        cursor.execute(query, values)
+        conn.commit()
+    except Exception as e:
+        logger.error(f"Erro no UPSERT: {str(e)}")
+        conn.rollback()
+        raise e
+    finally:
+        conn.close()
 
 def init_db():
     """Inicializa as tabelas no banco de dados."""
@@ -39,8 +137,8 @@ def init_db():
     cursor = conn.cursor()
     
     try:
-        # Verificar se estamos usando PostgreSQL
-        if os.getenv("DATABASE_URL"):
+        # Tabela para armazenar as lojas
+        if is_railway_environment():
             # PostgreSQL
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS stores (
@@ -56,6 +154,7 @@ def init_db():
                 )
             """)
             
+            # Tabela para métricas de produtos
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS product_metrics (
                     store_id TEXT,
@@ -70,6 +169,7 @@ def init_db():
                 )
             """)
             
+            # Tabela para métricas da DroPi
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS dropi_metrics (
                     store_id TEXT,
@@ -88,6 +188,7 @@ def init_db():
                 )
             """)
             
+            # Tabela para métricas de efetividade
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS product_effectiveness (
                     store_id TEXT,
@@ -154,12 +255,114 @@ def init_db():
                     PRIMARY KEY (store_id, product)
                 )
             """)
+        
+        conn.commit()
+        logger.info("Banco de dados inicializado com sucesso")
     except Exception as e:
-        st.error(f"Erro ao criar tabelas: {str(e)}")
+        logger.error(f"Erro ao inicializar banco: {str(e)}")
         conn.rollback()
         raise e
+    finally:
+        conn.close()
+
+# Funções específicas para operações comuns
+def load_stores():
+    """Carrega a lista de lojas cadastradas."""
+    try:
+        # Inicializa o banco se necessário
+        init_db()
+        
+        # Consulta as lojas
+        result = execute_query("SELECT id, name FROM stores", fetch_type='all')
+        return result or []
+    except Exception as e:
+        logger.error(f"Erro ao carregar lojas: {str(e)}")
+        return []
+
+def get_store_details(store_id):
+    """Obtém os detalhes de uma loja específica."""
+    try:
+        result = execute_query(
+            "SELECT name, shop_name, access_token, dropi_url, dropi_username, dropi_password, currency_from, currency_to FROM stores WHERE id = ?", 
+            (store_id,), 
+            fetch_type='one'
+        )
+        
+        if result:
+            return {
+                "name": result[0],
+                "shop_name": result[1],
+                "access_token": result[2],
+                "dropi_url": result[3] or "https://app.dropi.mx/",
+                "dropi_username": result[4],
+                "dropi_password": result[5],
+                "currency_from": result[6] or "MXN",
+                "currency_to": result[7] or "BRL",
+                "id": store_id
+            }
+        return None
+    except Exception as e:
+        logger.error(f"Erro ao obter detalhes da loja: {str(e)}")
+        return None
+
+def save_store(name, shop_name, access_token, dropi_url="", dropi_username="", dropi_password="", currency_from="MXN", currency_to="BRL"):
+    """Salva uma nova loja no banco de dados."""
+    import uuid
+    store_id = str(uuid.uuid4())
     
-    conn.commit()
-    conn.close()
+    data = {
+        "id": store_id,
+        "name": name,
+        "shop_name": shop_name,
+        "access_token": access_token,
+        "dropi_url": dropi_url,
+        "dropi_username": dropi_username,
+        "dropi_password": dropi_password,
+        "currency_from": currency_from,
+        "currency_to": currency_to
+    }
     
-    st.success("Banco de dados inicializado com sucesso!")
+    try:
+        execute_upsert("stores", data, ["id"])
+        return store_id
+    except Exception as e:
+        logger.error(f"Erro ao salvar loja: {str(e)}")
+        st.error(f"Erro ao salvar loja: {str(e)}")
+        return None
+
+def get_store_currency(store_id):
+    """Obtém as configurações de moeda da loja."""
+    try:
+        result = execute_query(
+            "SELECT currency_from, currency_to FROM stores WHERE id = ?", 
+            (store_id,), 
+            fetch_type='one'
+        )
+        
+        if result:
+            return {
+                "from": result[0] or "MXN",
+                "to": result[1] or "BRL"
+            }
+        return {"from": "MXN", "to": "BRL"}  # Valores padrão
+    except Exception as e:
+        logger.error(f"Erro ao obter configurações de moeda: {str(e)}")
+        return {"from": "MXN", "to": "BRL"}  # Valores padrão em caso de erro
+
+def save_effectiveness(store_id, product, value):
+    """Salva valor de efetividade para um produto."""
+    current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    
+    data = {
+        "store_id": store_id,
+        "product": product,
+        "general_effectiveness": value,
+        "last_updated": current_time
+    }
+    
+    try:
+        execute_upsert("product_effectiveness", data, ["store_id", "product"])
+        return True
+    except Exception as e:
+        logger.error(f"Erro ao salvar efetividade: {str(e)}")
+        return False

@@ -1,5 +1,4 @@
 import streamlit as st
-import sqlite3
 import pandas as pd
 from datetime import datetime, timedelta
 import requests
@@ -15,23 +14,25 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from webdriver_manager.chrome import ChromeDriverManager
-from db_utils import get_db_connection
-from db_utils import init_db, get_db_connection
-from selenium_utils import setup_selenium_for_cloud
 import matplotlib.pyplot as plt
 import numpy as np
 import altair as alt
-import psycopg2
 import sys
+import sqlite3
 
-# Adicione a raiz do projeto ao path para encontrar módulos
+# Adicionar a raiz do projeto ao path para importar módulos
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-# Tente importar as utilidades de banco de dados
+# Importar utilitários de banco de dados
 try:
-    from db_utils import get_db_connection, init_db
-except ImportError:
-    st.error("Não foi possível importar as funções de banco de dados.")
+    from db_utils import (
+        init_db, get_db_connection, execute_query, execute_upsert, 
+        load_stores, get_store_details, save_store, get_store_currency,
+        save_effectiveness, is_railway_environment
+    )
+except ImportError as e:
+    st.error(f"Erro ao importar módulos: {str(e)}")
+    # Fallback para funções locais se necessário
 
 # Configuração do logger
 logging.basicConfig(level=logging.INFO)
@@ -511,52 +512,38 @@ def process_shopify_products(orders, product_urls):
 
 def save_metrics_to_db(store_id, date, product_total, product_processed, product_delivered, product_url_map, product_value):
     """Salva as métricas no banco de dados."""
-    from db_utils import get_db_connection, adapt_query
     conn = get_db_connection()
     cursor = conn.cursor()
     
-    # Verificar se a coluna total_value existe
     try:
-        cursor.execute("SELECT total_value FROM product_metrics LIMIT 1")
-    except:
-        # Adicionar a coluna se não existir (sintaxe compatível com ambos)
-        try:
-            cursor.execute("ALTER TABLE product_metrics ADD COLUMN total_value REAL DEFAULT 0")
-            conn.commit()
-        except:
-            # Pode já existir no PostgreSQL
-            conn.rollback()
-    
-    # Adaptar a query para o banco correto
-    query = adapt_query("""
-        INSERT INTO product_metrics 
-        (store_id, date, product, product_url, total_orders, processed_orders, delivered_orders, total_value)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(store_id, date, product) DO UPDATE SET
-        product_url = excluded.product_url,
-        total_orders = excluded.total_orders,
-        processed_orders = excluded.processed_orders,
-        delivered_orders = excluded.delivered_orders,
-        total_value = excluded.total_value
-    """)
-    
-    for product in product_total:
-        cursor.execute(
-            query,
-            (
-                store_id,
-                date, 
-                product,
-                product_url_map.get(product, ""),
-                product_total.get(product, 0),
-                product_processed.get(product, 0),
-                product_delivered.get(product, 0),
-                product_value.get(product, 0)
-            )
-        )
-    
-    conn.commit()
-    conn.close()
+        # Limpar dados existentes para este período
+        delete_query = "DELETE FROM product_metrics WHERE store_id = ? AND date = ?"
+        if is_railway_environment():
+            delete_query = delete_query.replace("?", "%s")
+        
+        cursor.execute(delete_query, (store_id, date))
+        conn.commit()
+        
+        # Inserir novos dados
+        for product in product_total:
+            data = {
+                "store_id": store_id,
+                "date": date, 
+                "product": product,
+                "product_url": product_url_map.get(product, ""),
+                "total_orders": product_total.get(product, 0),
+                "processed_orders": product_processed.get(product, 0),
+                "delivered_orders": product_delivered.get(product, 0),
+                "total_value": product_value.get(product, 0)
+            }
+            
+            execute_upsert("product_metrics", data, ["store_id", "date", "product"])
+    except Exception as e:
+        logger.error(f"Erro ao salvar métricas: {str(e)}")
+        conn.rollback()
+        st.error(f"Erro ao salvar dados: {str(e)}")
+    finally:
+        conn.close()
 
 def get_url_categories(store_id, start_date_str, end_date_str):
     """Obtém as categorias de URLs (Google, TikTok, Facebook) com base nos padrões nas URLs."""
@@ -565,6 +552,11 @@ def get_url_categories(store_id, start_date_str, end_date_str):
         SELECT DISTINCT product_url FROM product_metrics 
         WHERE store_id = '{store_id}' AND date BETWEEN '{start_date_str}' AND '{end_date_str}'
     """
+    
+    # Adaptação para PostgreSQL/SQLite
+    if is_railway_environment():
+        query = query.replace("?", "%s")
+    
     df = pd.read_sql_query(query, conn)
     conn.close()
     
@@ -612,11 +604,8 @@ def setup_selenium(headless=True):
     chrome_options.add_argument("--disable-extensions")
     chrome_options.add_argument("--dns-prefetch-disable")
     
-    # Verificar se estamos em ambiente de produção (Railway) ou desenvolvimento
-    is_production = os.getenv('RAILWAY_ENVIRONMENT') is not None
-    
     try:
-        if is_production:
+        if is_railway_environment():
             # No Railway, o ChromeDriver deve estar disponível no PATH
             driver = webdriver.Chrome(options=chrome_options)
             logger.info("Selenium WebDriver initialized in production mode")
@@ -1420,7 +1409,6 @@ def extract_product_data(driver, logger):
 
 def save_dropi_metrics_to_db(store_id, date, products_data):
     """Save DroPi product metrics to the database."""
-    from db_utils import get_db_connection, adapt_query
     conn = get_db_connection()
     cursor = conn.cursor()
     
@@ -1429,9 +1417,11 @@ def save_dropi_metrics_to_db(store_id, date, products_data):
         conn.execute("BEGIN TRANSACTION")
         
         # Remover dados existentes para esta loja e data
-        delete_query = adapt_query("DELETE FROM dropi_metrics WHERE store_id = ? AND date = ?")
+        delete_query = "DELETE FROM dropi_metrics WHERE store_id = ? AND date = ?"
+        if is_railway_environment():
+            delete_query = delete_query.replace("?", "%s")
+            
         cursor.execute(delete_query, (store_id, date))
-        logger.info(f"Removidas {cursor.rowcount if hasattr(cursor, 'rowcount') else '?'} linhas existentes")
         
         # Verificar se há produtos duplicados e agrupá-los
         product_names = {}
@@ -1446,33 +1436,24 @@ def save_dropi_metrics_to_db(store_id, date, products_data):
             else:
                 product_names[product_name] = product
         
-        # Adaptar a query para o banco correto
-        insert_query = adapt_query("""
-            INSERT INTO dropi_metrics 
-            (store_id, date, product, provider, stock, orders_count, orders_value, 
-             transit_count, transit_value, delivered_count, delivered_value, profits)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """)
-        
-        # Inserir dados
+        # Inserir novos dados
         for product_name, product in product_names.items():
-            cursor.execute(
-                insert_query,
-                (
-                    store_id,
-                    date, 
-                    product_name,
-                    product["provider"],
-                    product["stock"],
-                    product["orders_count"],
-                    product["orders_value"],
-                    product["transit_count"],
-                    product["transit_value"],
-                    product["delivered_count"],
-                    product["delivered_value"],
-                    product["profits"]
-                )
-            )
+            data = {
+                "store_id": store_id,
+                "date": date, 
+                "product": product_name,
+                "provider": product["provider"],
+                "stock": product["stock"],
+                "orders_count": product["orders_count"],
+                "orders_value": product["orders_value"],
+                "transit_count": product["transit_count"],
+                "transit_value": product["transit_value"],
+                "delivered_count": product["delivered_count"],
+                "delivered_value": product["delivered_value"],
+                "profits": product["profits"]
+            }
+            
+            execute_upsert("dropi_metrics", data, ["store_id", "date", "product"])
             logger.info(f"Inserido/atualizado produto: {product_name}")
         
         # Confirmar a transação
@@ -1715,48 +1696,52 @@ def display_dropi_data(store_id, date_str):
     conn = get_db_connection()
     
     # Consulta com filtro exato por data
-    query = f"""
+    query = """
         SELECT * FROM dropi_metrics 
-        WHERE store_id = '{store_id}' 
-        AND date = '{date_str}'
+        WHERE store_id = ? AND date = ?
     """
     
-    data = pd.read_sql_query(query, conn)
+    if is_railway_environment():
+        query = query.replace("?", "%s")
+    
+    cursor = conn.cursor()
+    cursor.execute(query, (store_id, date_str))
+    
+    # Converter resultados para DataFrame
+    columns = [desc[0] for desc in cursor.description]
+    data = cursor.fetchall()
     
     # Obter informações da moeda da loja
-    c = conn.cursor()
-    c.execute("SELECT currency_from, currency_to FROM stores WHERE id = ?", (store_id,))
-    currency_info = c.fetchone()
+    currency_info = get_store_currency(store_id)
+    currency_from = currency_info["from"]
+    currency_to = currency_info["to"]
+    
+    # Converter para DataFrame
+    data_df = pd.DataFrame(data, columns=columns)
+    
     conn.close()
-    
-    currency_from = "MXN" 
-    currency_to = "BRL"
-    
-    if currency_info:
-        currency_from = currency_info[0] or "MXN"
-        currency_to = currency_info[1] or "BRL"
     
     # Obter taxa de conversão
     exchange_rate = get_exchange_rate(currency_from, currency_to)
     logger.info(f"Taxa de conversão de {currency_from} para {currency_to}: {exchange_rate}")
     
     # Converter valores monetários
-    if not data.empty:
+    if not data_df.empty:
         for col in ['orders_value', 'transit_value', 'delivered_value', 'profits']:
-            if col in data.columns:
-                data[col] = data[col] * exchange_rate
+            if col in data_df.columns:
+                data_df[col] = data_df[col] * exchange_rate
     
-    logger.info(f"Encontrados {len(data)} registros DroPi para a data selecionada")
+    logger.info(f"Encontrados {len(data_df)} registros DroPi para a data selecionada")
     
-    if not data.empty:
+    if not data_df.empty:
         # Summary statistics
-        total_orders = data["orders_count"].sum()
-        total_orders_value = data["orders_value"].sum()
-        total_transit = data["transit_count"].sum()
-        total_transit_value = data["transit_value"].sum()
-        total_delivered = data["delivered_count"].sum()
-        total_delivered_value = data["delivered_value"].sum()
-        total_profits = data["profits"].sum()
+        total_orders = data_df["orders_count"].sum()
+        total_orders_value = data_df["orders_value"].sum()
+        total_transit = data_df["transit_count"].sum()
+        total_transit_value = data_df["transit_value"].sum()
+        total_delivered = data_df["delivered_count"].sum()
+        total_delivered_value = data_df["delivered_value"].sum()
+        total_profits = data_df["profits"].sum()
         
         # Display metrics in three columns
         col1, col2, col3 = st.columns(3)
@@ -1771,12 +1756,12 @@ def display_dropi_data(store_id, date_str):
             st.metric("Entregues", f"{total_delivered}", f"{currency_to} {total_delivered_value:,.2f}")
         
         # Exibir tabela com todos os dados e uma mensagem de confirmação do período
-        period_text = f"Mostrando {len(data)} produtos para a data: {date_str} (Valores em {currency_to})"
+        period_text = f"Mostrando {len(data_df)} produtos para a data: {date_str} (Valores em {currency_to})"
         
         with st.expander("Produtos DroPi", expanded=True):
             st.info(period_text)
             st.dataframe(
-                data,
+                data_df,
                 column_config={
                     "date": "Data",
                     "product": "Produto",
@@ -1793,7 +1778,7 @@ def display_dropi_data(store_id, date_str):
                 use_container_width=True
             )
         
-        return data
+        return data_df
     else:
         st.info(f"Não há dados disponíveis da DroPi para a data {date_str}.")
         return pd.DataFrame()
@@ -1920,26 +1905,40 @@ def display_effectiveness_table(store_id, date_str):
     # Debug info
     logger.info(f"Buscando dados de efetividade para store_id={store_id}, data: {date_str}")
     
-    # Get DroPi data only for the specific date
     conn = get_db_connection()
-    dropi_query = f"""
+    
+    # Get DroPi data only for the specific date
+    dropi_query = """
         SELECT product, SUM(orders_count) as orders_count, SUM(delivered_count) as delivered_count
         FROM dropi_metrics 
-        WHERE store_id = '{store_id}' 
-        AND date = '{date_str}'
+        WHERE store_id = ? AND date = ?
         GROUP BY product
     """
-    dropi_data = pd.read_sql_query(dropi_query, conn)
-    logger.info(f"Encontrados {len(dropi_data)} produtos para cálculo de efetividade")
     
-    # Get saved general effectiveness values for ALL products (independent of date)
-    effectiveness_query = f"""
+    if is_railway_environment():
+        dropi_query = dropi_query.replace("?", "%s")
+    
+    cursor = conn.cursor()
+    cursor.execute(dropi_query, (store_id, date_str))
+    
+    # Converter resultados para DataFrame
+    columns = ["product", "orders_count", "delivered_count"]
+    dropi_data = pd.DataFrame(cursor.fetchall(), columns=columns)
+    
+    # Get saved general effectiveness values for ALL products
+    effectiveness_query = """
         SELECT product, general_effectiveness, last_updated
         FROM product_effectiveness 
-        WHERE store_id = '{store_id}'
+        WHERE store_id = ?
     """
-    effectiveness_data = pd.read_sql_query(effectiveness_query, conn)
-    logger.info(f"Valores de efetividade geral disponíveis para {len(effectiveness_data)} produtos")
+    
+    if is_railway_environment():
+        effectiveness_query = effectiveness_query.replace("?", "%s")
+    
+    cursor.execute(effectiveness_query, (store_id,))
+    columns = ["product", "general_effectiveness", "last_updated"]
+    effectiveness_data = pd.DataFrame(cursor.fetchall(), columns=columns)
+    
     conn.close()
     
     # Process the data if we have any
@@ -1965,13 +1964,6 @@ def display_effectiveness_table(store_id, date_str):
         
         # Informar data dos dados
         st.info(f"Mostrando {len(dropi_data)} produtos para a data: {date_str}")
-        
-        # Adicionar estilo para destacar linhas com baixa efetividade
-        def highlight_low_effectiveness(df):
-            return [
-                'background-color: #ffcccc' if row['effectiveness'] <= 40.0 else '' 
-                for i, row in df.iterrows()
-            ]
         
         # Create the editable dataframe with styling
         edited_df = st.data_editor(
@@ -2013,12 +2005,12 @@ def display_effectiveness_table(store_id, date_str):
                     old_value = dropi_data.loc[dropi_data['product'] == product, 'general_effectiveness'].iloc[0]
                     # Save if changed
                     if pd.notna(new_value) and (pd.isna(old_value) or new_value != old_value):
-                        save_general_effectiveness(store_id, product, new_value)
+                        save_effectiveness(store_id, product, new_value)
                         logger.info(f"Salvou efetividade geral para '{product}': {new_value}")
                 except:
                     # If there's no old value, save the new one if it's not None/NaN
                     if pd.notna(new_value):
-                        save_general_effectiveness(store_id, product, new_value)
+                        save_effectiveness(store_id, product, new_value)
                         logger.info(f"Salvou nova efetividade geral para '{product}': {new_value}")
         
         # Add a button to save all changes at once
@@ -2026,7 +2018,7 @@ def display_effectiveness_table(store_id, date_str):
             # Save all values
             for idx, row in edited_df.iterrows():
                 if pd.notna(row['general_effectiveness']):
-                    save_general_effectiveness(store_id, product, new_value)
+                    save_effectiveness(store_id, row['product'], row['general_effectiveness'])
             st.success("Valores de efetividade geral salvos com sucesso!")
             
     else:
@@ -2246,12 +2238,12 @@ def store_dashboard(store):
 # Main code execution starts here
 
 # Inicializar banco de dados
-from db_utils import init_db
+init_db()
 
 # Sidebar para seleção de loja
 st.sidebar.title("Seleção de Loja")
 
-# Carregar lojas existentes
+# Carregar lojas existentes (usando a função do db_utils)
 stores = load_stores()
 store_options = ["Selecione uma loja..."] + [store[1] for store in stores] + ["➕ Cadastrar Nova Loja"]
 selected_option = st.sidebar.selectbox("Escolha uma loja:", store_options)
@@ -2307,7 +2299,7 @@ if selected_option == "➕ Cadastrar Nova Loja":
     
     if st.sidebar.button("Salvar Loja"):
         if store_name and shop_name and access_token and dropi_username and dropi_password:
-            save_store(
+            saved_id = save_store(
                 store_name, 
                 shop_name, 
                 access_token, 
@@ -2317,9 +2309,13 @@ if selected_option == "➕ Cadastrar Nova Loja":
                 currency_from,
                 currency_to
             )
-            st.sidebar.success(f"Loja '{store_name}' cadastrada com sucesso!")
-            # Recarregar a página para atualizar a lista
-            st.rerun()
+            
+            if saved_id:
+                st.sidebar.success(f"Loja '{store_name}' cadastrada com sucesso!")
+                # Recarregar a página para atualizar a lista
+                st.rerun()
+            else:
+                st.sidebar.error("Erro ao cadastrar loja.")
         else:
             st.sidebar.error("Preencha todos os campos!")
 
