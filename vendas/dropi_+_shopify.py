@@ -218,62 +218,6 @@ def load_stores():
             conn.close()
             return stores
 
-# Função para salvar nova loja
-def save_store(name, shop_name, access_token, dropi_url="", dropi_username="", dropi_password="", currency_from="MXN", currency_to="BRL"):
-    """Salva uma nova loja no banco de dados."""
-    import uuid
-    store_id = str(uuid.uuid4())
-    
-    # Usar nossa função de utilidade
-    from db_utils import get_db_connection, adapt_query
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    
-    query = adapt_query("""
-        INSERT INTO stores 
-        (id, name, shop_name, access_token, dropi_url, dropi_username, dropi_password, currency_from, currency_to) 
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    """)
-    
-    cursor.execute(
-        query,
-        (store_id, name, shop_name, access_token, dropi_url, dropi_username, dropi_password, currency_from, currency_to)
-    )
-    
-    conn.commit()
-    conn.close()
-    return store_id
-
-# Função para obter detalhes da loja
-def get_store_details(store_id):
-    """Obtém os detalhes de uma loja específica."""
-    from db_utils import get_db_connection, adapt_query
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    
-    query = adapt_query("""
-        SELECT name, shop_name, access_token, dropi_url, dropi_username, dropi_password, currency_from, currency_to 
-        FROM stores WHERE id = ?
-    """)
-    
-    cursor.execute(query, (store_id,))
-    store = cursor.fetchone()
-    conn.close()
-    
-    if store:
-        return {
-            "name": store[0],
-            "shop_name": store[1],
-            "access_token": store[2],
-            "dropi_url": store[3] or "https://app.dropi.mx/",
-            "dropi_username": store[4],
-            "dropi_password": store[5],
-            "currency_from": store[6] or "MXN",
-            "currency_to": store[7] or "BRL",
-            "id": store_id
-        }
-    return None
-
 # Função para obter taxa de conversão de moeda
 def get_exchange_rate(from_currency, to_currency):
     """Obtém a taxa de câmbio atual entre duas moedas."""
