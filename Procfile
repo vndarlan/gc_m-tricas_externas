@@ -1,0 +1,1 @@
+web: streamlit run iniciar.py --server.port=$PORT --server.headless=true

@@ -15,6 +15,8 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from webdriver_manager.chrome import ChromeDriverManager
+from db_utils import get_db_connection
+from selenium_utils import setup_selenium_for_cloud
 import matplotlib.pyplot as plt
 import numpy as np
 import altair as alt
@@ -64,7 +66,7 @@ if not os.path.exists("store_config"):
 # Inicializar banco de dados
 def init_db():
     """Inicializa o banco de dados SQLite para todas as lojas."""
-    conn = sqlite3.connect("dashboard.db")
+    conn = get_db_connection()
     c = conn.cursor()
     
     # Tabela para métricas de produtos
@@ -156,7 +158,7 @@ def init_db():
 # Carregar lista de lojas
 def load_stores():
     """Carrega a lista de lojas cadastradas."""
-    conn = sqlite3.connect("dashboard.db")
+    conn = get_db_connection()
     c = conn.cursor()
     c.execute("SELECT id, name FROM stores")
     stores = c.fetchall()
@@ -169,7 +171,7 @@ def save_store(name, shop_name, access_token, dropi_url="", dropi_username="", d
     import uuid
     store_id = str(uuid.uuid4())
     
-    conn = sqlite3.connect("dashboard.db")
+    conn = get_db_connection()
     c = conn.cursor()
     c.execute(
         """INSERT INTO stores 
@@ -184,7 +186,7 @@ def save_store(name, shop_name, access_token, dropi_url="", dropi_username="", d
 # Função para obter detalhes da loja
 def get_store_details(store_id):
     """Obtém os detalhes de uma loja específica."""
-    conn = sqlite3.connect("dashboard.db")
+    conn = get_db_connection()
     c = conn.cursor()
     c.execute("SELECT name, shop_name, access_token, dropi_url, dropi_username, dropi_password, currency_from, currency_to FROM stores WHERE id = ?", (store_id,))
     store = c.fetchone()
@@ -442,7 +444,7 @@ def process_shopify_products(orders, product_urls):
 
 def save_metrics_to_db(store_id, date, product_total, product_processed, product_delivered, product_url_map, product_value):
     """Salva as métricas no banco de dados."""
-    conn = sqlite3.connect("dashboard.db")
+    conn = get_db_connection()
     c = conn.cursor()
     
     # Verificar se a coluna total_value existe
@@ -480,7 +482,7 @@ def save_metrics_to_db(store_id, date, product_total, product_processed, product
 
 def get_url_categories(store_id, start_date_str, end_date_str):
     """Obtém as categorias de URLs (Google, TikTok, Facebook) com base nos padrões nas URLs."""
-    conn = sqlite3.connect("dashboard.db")
+    conn = get_db_connection()
     query = f"""
         SELECT DISTINCT product_url FROM product_metrics 
         WHERE store_id = '{store_id}' AND date BETWEEN '{start_date_str}' AND '{end_date_str}'
@@ -517,20 +519,37 @@ def get_url_categories(store_id, start_date_str, end_date_str):
 # === FUNÇÕES PARA DroPi ===
 
 def setup_selenium(headless=True):
-    """Configure and initialize Selenium WebDriver."""
-    # Configure Chrome options
+    """Configure and initialize Selenium WebDriver for cloud environment."""
+    # Configure Chrome options for cloud environment
     chrome_options = Options()
-    if headless:
-        chrome_options.add_argument("--headless")  # Run in headless mode
+    
+    # Sempre use headless mode no ambiente cloud
+    chrome_options.add_argument("--headless")
     chrome_options.add_argument("--no-sandbox")
     chrome_options.add_argument("--disable-dev-shm-usage")
+    chrome_options.add_argument("--disable-gpu")
     
-    # Initialize the WebDriver
+    # Configurações adicionais para melhorar a estabilidade
+    chrome_options.add_argument("--window-size=1920,1080")
+    chrome_options.add_argument("--disable-extensions")
+    chrome_options.add_argument("--dns-prefetch-disable")
+    
+    # Verificar se estamos em ambiente de produção (Railway) ou desenvolvimento
+    is_production = os.getenv('RAILWAY_ENVIRONMENT') is not None
+    
     try:
-        service = Service(ChromeDriverManager().install())
-        driver = webdriver.Chrome(service=service, options=chrome_options)
-        logger.info("Selenium WebDriver initialized successfully")
+        if is_production:
+            # No Railway, o ChromeDriver deve estar disponível no PATH
+            driver = webdriver.Chrome(options=chrome_options)
+            logger.info("Selenium WebDriver initialized in production mode")
+        else:
+            # Em desenvolvimento, usar ChromeDriverManager 
+            service = Service(ChromeDriverManager().install())
+            driver = webdriver.Chrome(service=service, options=chrome_options)
+            logger.info("Selenium WebDriver initialized in development mode")
+        
         return driver
+        
     except Exception as e:
         logger.error(f"Failed to initialize WebDriver: {str(e)}")
         st.error(f"Erro ao inicializar o navegador: {str(e)}")
@@ -1323,7 +1342,7 @@ def extract_product_data(driver, logger):
 
 def save_dropi_metrics_to_db(store_id, date, products_data):
     """Save DroPi product metrics to the database."""
-    conn = sqlite3.connect("dashboard.db")
+    conn = get_db_connection()
     c = conn.cursor()
     
     try:
@@ -1608,7 +1627,7 @@ def display_shopify_chart(data, selected_category):
 
 def display_dropi_data(store_id, date_str):
     """Exibe os dados da DroPi em tabelas colapsáveis e gráficos para uma data específica."""
-    conn = sqlite3.connect("dashboard.db")
+    conn = get_db_connection()
     
     # Consulta com filtro exato por data
     query = f"""
@@ -1750,7 +1769,7 @@ def display_dropi_chart(data):
 
 def get_saved_effectiveness(store_id):
     """Retrieve previously saved general effectiveness values."""
-    conn = sqlite3.connect("dashboard.db")
+    conn = get_db_connection()
     query = f"""
         SELECT product, general_effectiveness FROM product_effectiveness 
         WHERE store_id = '{store_id}'
@@ -1768,7 +1787,7 @@ def get_saved_effectiveness(store_id):
 
 def save_general_effectiveness(store_id, product, value):
     """Save a manually entered general effectiveness value."""
-    conn = sqlite3.connect("dashboard.db")
+    conn = get_db_connection()
     c = conn.cursor()
     
     current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -1790,7 +1809,7 @@ def display_effectiveness_table(store_id, date_str):
     logger.info(f"Buscando dados de efetividade para store_id={store_id}, data: {date_str}")
     
     # Get DroPi data only for the specific date
-    conn = sqlite3.connect("dashboard.db")
+    conn = get_db_connection()
     dropi_query = f"""
         SELECT product, SUM(orders_count) as orders_count, SUM(delivered_count) as delivered_count
         FROM dropi_metrics 
@@ -1942,7 +1961,7 @@ def update_dropi_data_silent(store, start_date, end_date):
         save_dropi_metrics_to_db(store["id"], date_str, product_data)
         
         # Verificar após salvar (depuração)
-        conn = sqlite3.connect("dashboard.db")
+        conn = get_db_connection()
         c = conn.cursor()
         c.execute("SELECT COUNT(*) FROM dropi_metrics WHERE store_id = ? AND date = ?", (store["id"], date_str))
         count = c.fetchone()[0]
@@ -2000,7 +2019,7 @@ def store_dashboard(store):
                 product_total, product_processed, product_delivered, product_url_map, product_value = process_shopify_products(orders, product_urls)
                 
                 # Limpar dados antigos para esse período
-                conn = sqlite3.connect("dashboard.db")
+                conn = get_db_connection()
                 c = conn.cursor()
                 c.execute("DELETE FROM product_metrics WHERE store_id = ? AND date BETWEEN ? AND ?", 
                         (store["id"], start_date_str, end_date_str))
@@ -2034,7 +2053,7 @@ def store_dashboard(store):
         st.markdown('<h2 style="text-align: center; font-weight: bold;">SHOPIFY</h2>', unsafe_allow_html=True)
         
         # Recuperar dados atualizados para o intervalo de datas
-        conn = sqlite3.connect("dashboard.db")
+        conn = get_db_connection()
         query = f"""
             SELECT * FROM product_metrics 
             WHERE store_id = '{store["id"]}' AND date BETWEEN '{start_date_str}' AND '{end_date_str}'
@@ -2115,7 +2134,7 @@ def store_dashboard(store):
 # Main code execution starts here
 
 # Inicializar banco de dados
-init_db()
+from db_utils import init_db
 
 # Sidebar para seleção de loja
 st.sidebar.title("Seleção de Loja")
