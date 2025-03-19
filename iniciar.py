@@ -69,6 +69,9 @@ def main():
                     st.Page("plataformas_de_anuncio/tiktok.py",   title="Tiktok",   icon="🇲🇽"),
                     st.Page("plataformas_de_anuncio/google.py",   title="Google",   icon="🇲🇽"),
                 ],
+                "Administração": [
+                    st.Page("administracao/admin.py",   title="Adm",   icon="🇲🇽"),
+                ],
             }
 
         else:
