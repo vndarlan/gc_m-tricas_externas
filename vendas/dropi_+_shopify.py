@@ -22,6 +22,16 @@ import matplotlib.pyplot as plt
 import numpy as np
 import altair as alt
 import psycopg2
+import sys
+
+# Adicione a raiz do projeto ao path para encontrar módulos
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+# Tente importar as utilidades de banco de dados
+try:
+    from db_utils import get_db_connection, init_db
+except ImportError:
+    st.error("Não foi possível importar as funções de banco de dados.")
 
 # Configuração do logger
 logging.basicConfig(level=logging.INFO)
@@ -160,25 +170,52 @@ def init_db():
 # Carregar lista de lojas
 def load_stores():
     """Carrega a lista de lojas cadastradas."""
-    conn = sqlite3.connect("dashboard.db")
-    c = conn.cursor()
-    
-    # Garantir que as tabelas existam
     try:
-        c.execute("SELECT id, name FROM stores")
-    except (sqlite3.OperationalError, psycopg2.errors.UndefinedTable):
-        # Se a tabela não existir, inicialize o banco de dados
-        conn.close()
+        # Tenta importar nossa função de conexão com o banco
+        from db_utils import get_db_connection, init_db
+        
+        # Inicializa o banco de dados
         init_db()
-        # Reabrir conexão
-        conn = sqlite3.connect("dashboard.db")
+        
+        # Obtém conexão
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Executa consulta
+        cursor.execute("SELECT id, name FROM stores")
+        
+        # O resultado difere entre PostgreSQL e SQLite
+        if os.getenv("DATABASE_URL"):
+            # PostgreSQL retorna resultados como lista de tuplas
+            stores = cursor.fetchall()
+        else:
+            # SQLite também retorna lista de tuplas, então mantemos
+            stores = cursor.fetchall()
+        
+        conn.close()
+        return stores
+        
+    except ImportError:
+        # Fallback para SQLite
+        conn = get_db_connection()
         c = conn.cursor()
-    
-    # Agora podemos consultar com segurança
-    c.execute("SELECT id, name FROM stores")
-    stores = c.fetchall()
-    conn.close()
-    return stores
+        
+        try:
+            c.execute("SELECT id, name FROM stores")
+            stores = c.fetchall()
+            conn.close()
+            return stores
+        except sqlite3.OperationalError:
+            # Se a tabela não existe, inicializa o banco
+            conn.close()
+            init_db()  # Isso pode falhar se init_db também não foi definido
+            # Tenta novamente
+            conn = get_db_connection()
+            c = conn.cursor()
+            c.execute("SELECT id, name FROM stores")
+            stores = c.fetchall()
+            conn.close()
+            return stores
 
 # Função para salvar nova loja
 def save_store(name, shop_name, access_token, dropi_url="", dropi_username="", dropi_password="", currency_from="MXN", currency_to="BRL"):
