@@ -366,3 +366,77 @@ def save_effectiveness(store_id, product, value):
     except Exception as e:
         logger.error(f"Erro ao salvar efetividade: {str(e)}")
         return False
+    
+def update_dropi_metrics_schema():
+    """Atualiza o esquema da tabela dropi_metrics para suportar intervalos de data."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    try:
+        # Verificar se as colunas já existem
+        if is_railway_environment():
+            # PostgreSQL
+            cursor.execute("""
+                SELECT column_name FROM information_schema.columns 
+                WHERE table_name = 'dropi_metrics' AND column_name = 'date_start'
+            """)
+        else:
+            # SQLite
+            cursor.execute("PRAGMA table_info(dropi_metrics)")
+            columns = [column[1] for column in cursor.fetchall()]
+            column_exists = 'date_start' in columns
+            
+            if column_exists:
+                conn.close()
+                return  # As colunas já existem, não faz nada
+        
+        # Criar nova tabela com as colunas adicionais
+        if is_railway_environment():
+            # PostgreSQL usa ALTER TABLE para adicionar colunas
+            cursor.execute("ALTER TABLE dropi_metrics ADD COLUMN IF NOT EXISTS date_start TEXT")
+            cursor.execute("ALTER TABLE dropi_metrics ADD COLUMN IF NOT EXISTS date_end TEXT")
+            
+            # Atualizar os dados existentes
+            cursor.execute("UPDATE dropi_metrics SET date_start = date, date_end = date WHERE date_start IS NULL")
+        else:
+            # SQLite - Criar tabela temporária, migrar dados e renomear
+            cursor.execute("""
+                CREATE TABLE dropi_metrics_new (
+                    store_id TEXT,
+                    date TEXT,
+                    date_start TEXT,
+                    date_end TEXT,
+                    product TEXT,
+                    provider TEXT,
+                    stock INTEGER,
+                    orders_count INTEGER,
+                    orders_value REAL,
+                    transit_count INTEGER, 
+                    transit_value REAL,
+                    delivered_count INTEGER,
+                    delivered_value REAL,
+                    profits REAL,
+                    PRIMARY KEY (store_id, date, product)
+                )
+            """)
+            
+            # Copiar dados antigos para a nova tabela
+            cursor.execute("""
+                INSERT INTO dropi_metrics_new 
+                SELECT store_id, date, date, date, product, provider, stock, 
+                      orders_count, orders_value, transit_count, transit_value, 
+                      delivered_count, delivered_value, profits
+                FROM dropi_metrics
+            """)
+            
+            # Substituir a tabela antiga pela nova
+            cursor.execute("DROP TABLE dropi_metrics")
+            cursor.execute("ALTER TABLE dropi_metrics_new RENAME TO dropi_metrics")
+        
+        conn.commit()
+        logger.info("Esquema da tabela dropi_metrics atualizado com sucesso")
+    except Exception as e:
+        logger.error(f"Erro ao atualizar esquema: {str(e)}")
+        conn.rollback()
+    finally:
+        conn.close()

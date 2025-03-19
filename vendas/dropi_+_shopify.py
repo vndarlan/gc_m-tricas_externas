@@ -1351,13 +1351,32 @@ def extract_product_data(driver, logger):
         logger.error(f"Erro geral ao extrair dados dos produtos: {str(e)}")
         return []
 
-def save_dropi_metrics_to_db(store_id, date, products_data):
-    """Save DroPi product metrics to the database."""
+def save_dropi_metrics_to_db(store_id, date_str, products_data, start_date_str=None, end_date_str=None):
+    """Save DroPi product metrics to the database with date interval support.
+    
+    Args:
+        store_id: ID da loja
+        date_str: Data de referência (geralmente a data final)
+        products_data: Lista de dados de produtos
+        start_date_str: Data inicial do intervalo (opcional)
+        end_date_str: Data final do intervalo (opcional)
+    """
+    # Se as datas de início e fim não foram fornecidas, use a data de referência para ambas
+    if not start_date_str:
+        start_date_str = date_str
+    if not end_date_str:
+        end_date_str = date_str
+        
     try:
-        # Remover dados existentes para este período
-        delete_query = "DELETE FROM dropi_metrics WHERE store_id = ? AND date = ?"
+        # Remover dados existentes para este intervalo específico
         from db_utils import execute_query
-        execute_query(delete_query, (store_id, date))
+        delete_query = """
+            DELETE FROM dropi_metrics 
+            WHERE store_id = ? 
+              AND date_start = ? 
+              AND date_end = ?
+        """
+        execute_query(delete_query, (store_id, start_date_str, end_date_str))
         
         # Verificar se há produtos duplicados e agrupá-los
         product_names = {}
@@ -1377,7 +1396,9 @@ def save_dropi_metrics_to_db(store_id, date, products_data):
         for product_name, product in product_names.items():
             data = {
                 "store_id": store_id,
-                "date": date, 
+                "date": date_str,  # Mantido para compatibilidade
+                "date_start": start_date_str,  # Nova coluna
+                "date_end": end_date_str,      # Nova coluna
                 "product": product_name,
                 "provider": product["provider"],
                 "stock": product["stock"],
@@ -1623,21 +1644,23 @@ def display_shopify_chart(data, selected_category):
                 
                 st.altair_chart(chart, use_container_width=True)
 
-def display_dropi_data(store_id, date_str):
-    """Exibe os dados da DroPi em tabelas colapsáveis e gráficos para uma data específica."""
+def display_dropi_data(store_id, start_date_str, end_date_str):
+    """Exibe os dados da DroPi em tabelas colapsáveis e gráficos para um intervalo específico de datas."""
     conn = get_db_connection()
     
-    # Consulta com filtro exato por data
+    # Consulta com filtro exato por intervalo de datas
     query = """
         SELECT * FROM dropi_metrics 
-        WHERE store_id = ? AND date = ?
+        WHERE store_id = ? 
+          AND date_start = ? 
+          AND date_end = ?
     """
     
     if is_railway_environment():
         query = query.replace("?", "%s")
     
     cursor = conn.cursor()
-    cursor.execute(query, (store_id, date_str))
+    cursor.execute(query, (store_id, start_date_str, end_date_str))
     
     # Converter resultados para DataFrame
     columns = [desc[0] for desc in cursor.description]
@@ -1663,7 +1686,7 @@ def display_dropi_data(store_id, date_str):
             if col in data_df.columns:
                 data_df[col] = data_df[col] * exchange_rate
     
-    logger.info(f"Encontrados {len(data_df)} registros DroPi para a data selecionada")
+    logger.info(f"Encontrados {len(data_df)} registros DroPi para o período {start_date_str} a {end_date_str}")
     
     if not data_df.empty:
         # Summary statistics
@@ -1688,7 +1711,10 @@ def display_dropi_data(store_id, date_str):
             st.metric("Entregues", f"{total_delivered}", f"{currency_to} {total_delivered_value:,.2f}")
         
         # Exibir tabela com todos os dados e uma mensagem de confirmação do período
-        period_text = f"Mostrando {len(data_df)} produtos para a data: {date_str} (Valores em {currency_to})"
+        if start_date_str == end_date_str:
+            period_text = f"Mostrando {len(data_df)} produtos para a data: {start_date_str} (Valores em {currency_to})"
+        else:
+            period_text = f"Mostrando {len(data_df)} produtos para o período: {start_date_str} a {end_date_str} (Valores em {currency_to})"
         
         with st.expander("Produtos DroPi", expanded=True):
             st.info(period_text)
@@ -1712,7 +1738,10 @@ def display_dropi_data(store_id, date_str):
         
         return data_df
     else:
-        st.info(f"Não há dados disponíveis da DroPi para a data {date_str}.")
+        if start_date_str == end_date_str:
+            st.info(f"Não há dados disponíveis da DroPi para a data {start_date_str}.")
+        else:
+            st.info(f"Não há dados disponíveis da DroPi para o período {start_date_str} a {end_date_str}.")
         return pd.DataFrame()
 
 def adapt_upsert_query(base_query, update_columns, key_columns):
@@ -1830,20 +1859,20 @@ def save_general_effectiveness(store_id, product, value):
     conn.commit()
     conn.close()
 
-def display_effectiveness_table(store_id, date_str):
-    """Display a table with effectiveness metrics based only on DroPi data for a specific date."""
+def display_effectiveness_table(store_id, start_date_str, end_date_str):
+    """Display a table with effectiveness metrics based on DroPi data for a specific date range."""
     st.markdown("## Tabela de Efetividade", unsafe_allow_html=True)
     
     # Debug info
-    logger.info(f"Buscando dados de efetividade para store_id={store_id}, data: {date_str}")
+    logger.info(f"Buscando dados de efetividade para store_id={store_id}, período: {start_date_str} a {end_date_str}")
     
     conn = get_db_connection()
     
-    # Get DroPi data only for the specific date
+    # Get DroPi data for the specific date range
     dropi_query = """
         SELECT product, SUM(orders_count) as orders_count, SUM(delivered_count) as delivered_count
         FROM dropi_metrics 
-        WHERE store_id = ? AND date = ?
+        WHERE store_id = ? AND date_start = ? AND date_end = ?
         GROUP BY product
     """
     
@@ -1851,7 +1880,7 @@ def display_effectiveness_table(store_id, date_str):
         dropi_query = dropi_query.replace("?", "%s")
     
     cursor = conn.cursor()
-    cursor.execute(dropi_query, (store_id, date_str))
+    cursor.execute(dropi_query, (store_id, start_date_str, end_date_str))
     
     # Converter resultados para DataFrame
     columns = ["product", "orders_count", "delivered_count"]
@@ -1895,7 +1924,10 @@ def display_effectiveness_table(store_id, date_str):
         )
         
         # Informar data dos dados
-        st.info(f"Mostrando {len(dropi_data)} produtos para a data: {date_str}")
+        if start_date_str == end_date_str:
+            st.info(f"Mostrando {len(dropi_data)} produtos para a data: {start_date_str}")
+        else:
+            st.info(f"Mostrando {len(dropi_data)} produtos para o período: {start_date_str} a {end_date_str}")
         
         # Create the editable dataframe with styling
         edited_df = st.data_editor(
@@ -1954,7 +1986,10 @@ def display_effectiveness_table(store_id, date_str):
             st.success("Valores de efetividade geral salvos com sucesso!")
             
     else:
-        st.warning(f"Não há dados disponíveis da DroPi para a data {date_str}.")
+        if start_date_str == end_date_str:
+            st.warning(f"Não há dados disponíveis da DroPi para a data {start_date_str}.")
+        else:
+            st.warning(f"Não há dados disponíveis da DroPi para o período {start_date_str} a {end_date_str}.")
         
 def update_dropi_data_silent(store, start_date, end_date):
     """Atualiza os dados da DroPi sem exibir feedback de progresso."""
@@ -1965,9 +2000,14 @@ def update_dropi_data_silent(store, start_date, end_date):
         return False
     
     try:
-        # Usar a data final como referência para armazenar os dados
-        date_str = end_date.strftime("%Y-%m-%d")
-        logger.info(f"Buscando dados DroPi para data: {date_str}")
+        # Converter datas para strings
+        start_date_str = start_date.strftime("%Y-%m-%d")
+        end_date_str = end_date.strftime("%Y-%m-%d")
+        
+        # Data de referência é a mesma da final (mantido para compatibilidade)
+        date_str = end_date_str
+        
+        logger.info(f"Buscando dados DroPi para o período: {start_date_str} a {end_date_str}")
         
         # Fazer login no DroPi
         success = login(driver, store["dropi_username"], store["dropi_password"], logger)
@@ -1993,19 +2033,24 @@ def update_dropi_data_silent(store, start_date, end_date):
             driver.quit()
             return False
         
-        # Limpar dados antigos e salvar os novos
-        save_dropi_metrics_to_db(store["id"], date_str, product_data)
-
+        # Limpar dados antigos e salvar os novos - agora com datas inicial e final
+        save_dropi_metrics_to_db(store["id"], date_str, product_data, start_date_str, end_date_str)
+        
         # Verificar após salvar (depuração)
         try:
             from db_utils import execute_query
             result = execute_query(
-                "SELECT COUNT(*) FROM dropi_metrics WHERE store_id = ? AND date = ?", 
-                (store["id"], date_str),
+                """
+                SELECT COUNT(*) FROM dropi_metrics 
+                WHERE store_id = ? 
+                  AND date_start = ? 
+                  AND date_end = ?
+                """, 
+                (store["id"], start_date_str, end_date_str),
                 fetch_type='one'
             )
             count = result[0] if result else 0
-            logger.info(f"Verificação: {count} produtos salvos no banco para a data {date_str}")
+            logger.info(f"Verificação: {count} produtos salvos no banco para o período {start_date_str} a {end_date_str}")
         except Exception as e:
             logger.error(f"Erro na verificação de contagem: {str(e)}")
         
@@ -2151,15 +2196,18 @@ def store_dashboard(store):
     # ========== COLUNA DROPI ==========
     with col_dropi:
         st.markdown('<h2 style="text-align: center; font-weight: bold;">DROPI</h2>', unsafe_allow_html=True)
+
+        # Usar o intervalo completo de datas selecionado
+        dropi_start_date = dropi_filters['start_date']
+        dropi_end_date = dropi_filters['end_date']
     
-        # Usar apenas a data final selecionada ao invés de um intervalo
-        dropi_date = dropi_filters['end_date']
-        dropi_date_str = dropi_date.strftime("%Y-%m-%d")
-    
+        dropi_start_date_str = dropi_start_date.strftime("%Y-%m-%d")
+        dropi_end_date_str = dropi_end_date.strftime("%Y-%m-%d")
+
         # Exibir dados em tabelas colapsáveis e obter os dados para os gráficos
-        # Usar apenas a data específica, não um intervalo
-        dropi_data = display_dropi_data(store["id"], dropi_date_str)
-    
+        # Agora usando o intervalo completo de datas
+        dropi_data = display_dropi_data(store["id"], dropi_start_date_str, dropi_end_date_str)
+
         # Exibir gráficos
         if not dropi_data.empty:
             display_dropi_chart(dropi_data)
@@ -2168,13 +2216,20 @@ def store_dashboard(store):
     st.markdown('<hr style="height:2px;border-width:0;color:gray;background-color:gray;margin-top:20px;margin-bottom:20px;">', unsafe_allow_html=True)
     st.markdown('<h3 style="text-align: center; font-weight: normal;">Análise de Efetividade</h3>', unsafe_allow_html=True)
 
-    # Exibir tabela de efetividade apenas com dados da mesma data específica
-    display_effectiveness_table(store["id"], dropi_date_str)
+    # Exibir tabela de efetividade para o intervalo selecionado
+    display_effectiveness_table(store["id"], dropi_start_date_str, dropi_end_date_str)
 
 # Main code execution starts here
 
 # Inicializar banco de dados
 init_db()
+
+# Atualizar esquema da tabela dropi_metrics
+try:
+    from db_utils import update_dropi_metrics_schema
+    update_dropi_metrics_schema()
+except Exception as e:
+    st.error(f"Erro ao atualizar esquema do banco: {str(e)}")
 
 # Sidebar para seleção de loja
 st.sidebar.title("Seleção de Loja")
