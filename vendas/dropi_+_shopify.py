@@ -1353,19 +1353,11 @@ def extract_product_data(driver, logger):
 
 def save_dropi_metrics_to_db(store_id, date, products_data):
     """Save DroPi product metrics to the database."""
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    
     try:
-        # Iniciar uma transação para garantir operação atômica
-        conn.execute("BEGIN TRANSACTION")
-        
-        # Remover dados existentes para esta loja e data
+        # Remover dados existentes para este período
         delete_query = "DELETE FROM dropi_metrics WHERE store_id = ? AND date = ?"
-        if is_railway_environment():
-            delete_query = delete_query.replace("?", "%s")
-            
-        cursor.execute(delete_query, (store_id, date))
+        from db_utils import execute_query
+        execute_query(delete_query, (store_id, date))
         
         # Verificar se há produtos duplicados e agrupá-los
         product_names = {}
@@ -1381,6 +1373,7 @@ def save_dropi_metrics_to_db(store_id, date, products_data):
                 product_names[product_name] = product
         
         # Inserir novos dados
+        from db_utils import execute_upsert
         for product_name, product in product_names.items():
             data = {
                 "store_id": store_id,
@@ -1400,17 +1393,12 @@ def save_dropi_metrics_to_db(store_id, date, products_data):
             execute_upsert("dropi_metrics", data, ["store_id", "date", "product"])
             logger.info(f"Inserido/atualizado produto: {product_name}")
         
-        # Confirmar a transação
-        conn.commit()
         logger.info(f"Transação concluída com sucesso: {len(product_names)} produtos salvos")
+        return True
         
     except Exception as e:
-        # Reverter em caso de erro
-        conn.rollback()
         logger.error(f"Erro ao salvar dados no banco: {str(e)}")
-        raise e
-    finally:
-        conn.close()
+        return False
 
 # === FUNÇÕES PARA O LAYOUT MELHORADO ===
 
