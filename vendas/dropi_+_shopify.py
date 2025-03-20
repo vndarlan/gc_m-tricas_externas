@@ -1718,10 +1718,21 @@ def display_dropi_data(store_id, start_date_str, end_date_str):
         
         with st.expander("Produtos DroPi", expanded=True):
             st.info(period_text)
+            
+            # Configuração de colunas melhorada:
+            # 1. Ocultar store_id
+            # 2. Remover a coluna 'date' (redundante)
+            # 3. Renomear date_start e date_end
+            
+            # Primeiro, criar uma cópia do DataFrame sem a coluna 'date'
+            display_df = data_df.drop(columns=['date'], errors='ignore')
+            
             st.dataframe(
-                data_df,
+                display_df,
                 column_config={
-                    "date": "Data",
+                    "store_id": None,  # Ocultar esta coluna
+                    "date_start": st.column_config.TextColumn("Data Inicial"),
+                    "date_end": st.column_config.TextColumn("Data Final"),
                     "product": "Produto",
                     "provider": "Fornecedor",
                     "stock": "Estoque",
