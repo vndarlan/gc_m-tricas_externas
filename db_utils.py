@@ -454,44 +454,74 @@ def delete_store_by_id(store_id):
     conn = get_db_connection()
     cursor = conn.cursor()
     
+    # Armazenar contadores para relatório
+    deleted_counts = {
+        "product_metrics": 0,
+        "dropi_metrics": 0,
+        "product_effectiveness": 0,
+        "stores": 0
+    }
+    
     try:
-        # Iniciar transação
+        # Iniciar transação explicitamente
         if is_railway_environment():
             cursor.execute("BEGIN")
         else:
             cursor.execute("BEGIN TRANSACTION")
         
-        # Excluir dados relacionados primeiro para manter integridade referencial
-        tables = ["product_metrics", "dropi_metrics", "product_effectiveness"]
-        
-        for table in tables:
-            # Adaptar conforme o banco de dados
-            query = f"DELETE FROM {table} WHERE store_id = ?"
-            if is_railway_environment():
-                query = query.replace("?", "%s")
-            
-            cursor.execute(query, (store_id,))
-        
-        # Por fim, excluir a loja
-        query = "DELETE FROM stores WHERE id = ?"
+        # 1. Excluir registros da tabela product_metrics
         if is_railway_environment():
-            query = query.replace("?", "%s")
+            cursor.execute("DELETE FROM product_metrics WHERE store_id = %s", (store_id,))
+        else:
+            cursor.execute("DELETE FROM product_metrics WHERE store_id = ?", (store_id,))
+        deleted_counts["product_metrics"] = cursor.rowcount
         
-        cursor.execute(query, (store_id,))
+        # 2. Excluir registros da tabela dropi_metrics
+        if is_railway_environment():
+            cursor.execute("DELETE FROM dropi_metrics WHERE store_id = %s", (store_id,))
+        else:
+            cursor.execute("DELETE FROM dropi_metrics WHERE store_id = ?", (store_id,))
+        deleted_counts["dropi_metrics"] = cursor.rowcount
         
-        # Contar registros afetados
-        affected_rows = cursor.rowcount
+        # 3. Excluir registros da tabela product_effectiveness
+        if is_railway_environment():
+            cursor.execute("DELETE FROM product_effectiveness WHERE store_id = %s", (store_id,))
+        else:
+            cursor.execute("DELETE FROM product_effectiveness WHERE store_id = ?", (store_id,))
+        deleted_counts["product_effectiveness"] = cursor.rowcount
         
-        # Confirmar transação
+        # 4. Finalmente, excluir a loja
+        if is_railway_environment():
+            cursor.execute("DELETE FROM stores WHERE id = %s", (store_id,))
+        else:
+            cursor.execute("DELETE FROM stores WHERE id = ?", (store_id,))
+        deleted_counts["stores"] = cursor.rowcount
+        
+        # Confirmar a transação
         conn.commit()
         
-        return True, f"Loja excluída com sucesso! ({affected_rows} registros afetados)"
-    
+        # Verificar se a loja foi realmente excluída
+        if deleted_counts["stores"] == 0:
+            return False, f"Loja com ID {store_id} não foi encontrada no banco de dados."
+        
+        # Preparar relatório de sucesso
+        total_deleted = sum(deleted_counts.values())
+        detail_msg = ", ".join([f"{table}: {count}" for table, count in deleted_counts.items()])
+        
+        return True, f"Loja excluída com sucesso! Total de {total_deleted} registros removidos ({detail_msg})"
+        
     except Exception as e:
         # Reverter em caso de erro
-        conn.rollback()
+        try:
+            conn.rollback()
+        except:
+            pass
         logger.error(f"Erro ao excluir loja: {str(e)}")
         return False, f"Erro ao excluir loja: {str(e)}"
-    
+        
     finally:
-        conn.close()
+        # Garantir que a conexão seja fechada
+        try:
+            conn.close()
+        except:
+            pass

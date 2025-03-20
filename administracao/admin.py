@@ -7,10 +7,7 @@ import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Importar utilitários de banco de dados
-from db_utils import (
-    execute_query, get_db_connection, load_stores, is_railway_environment,
-    delete_store_by_id
-)
+from db_utils import load_stores, delete_store_by_id
 
 # Verificar se o usuário tem permissão de administrador
 if st.session_state.get("cargo") != "Administrador":
@@ -20,31 +17,11 @@ if st.session_state.get("cargo") != "Administrador":
 # Título da página
 st.title("Administração do Sistema")
 
-# Função para excluir uma loja e todos os seus dados
-# Essa função foi mantida apenas para referência, mas não é mais usada
-def delete_store(store_id):
-    try:
-        # Excluir dados relacionados primeiro
-        tables = ["product_metrics", "dropi_metrics", "product_effectiveness"]
-        
-        for table in tables:
-            execute_query(f"DELETE FROM {table} WHERE store_id = ?", (store_id,))
-        
-        # Por fim, excluir a loja
-        execute_query("DELETE FROM stores WHERE id = ?", (store_id,))
-        
-        return True, "Loja excluída com sucesso!"
-    except Exception as e:
-        return False, f"Erro ao excluir loja: {str(e)}"
-
 # Seção de Gestão de Lojas
 st.header("Gestão de Lojas")
 
 # Botão para forçar atualização da lista de lojas
 if st.button("Atualizar Lista de Lojas"):
-    # Limpar cache e recarregar a página
-    if hasattr(st, 'cache_data'):
-        st.cache_data.clear()
     st.rerun()
 
 # Carregar todas as lojas
@@ -53,13 +30,6 @@ stores = load_stores()
 if not stores:
     st.info("Não há lojas cadastradas no sistema.")
 else:
-    # Exibir debug info
-    if 'last_deleted_id' in st.session_state:
-        with st.expander("Informações de Depuração (última exclusão)"):
-            st.write(f"Último ID excluído: {st.session_state['last_deleted_id']}")
-            if 'last_deleted_count' in st.session_state:
-                st.write(f"Registros afetados: {st.session_state['last_deleted_count']}")
-    
     # Exibir informações sobre exclusão
     st.write("Selecione uma loja para excluir. Esta ação é irreversível e removerá todos os dados relacionados à loja.")
     
@@ -83,17 +53,12 @@ else:
             confirm_col1, confirm_col2 = st.columns(2)
             with confirm_col1:
                 if st.button("Sim, tenho certeza"):
-                    # Armazenar informação para depuração
-                    st.session_state['last_deleted_id'] = selected_id
-                    
-                    # Usar a função do db_utils.py em vez da função local
+                    # Usar a função do db_utils para excluir a loja
                     success, message = delete_store_by_id(selected_id)
                     
                     if success:
                         st.success(message)
-                        # Recarregar a lista de lojas
-                        if hasattr(st, 'cache_data'):
-                            st.cache_data.clear()
+                        # Recarregar a página para atualizar a lista
                         st.rerun()
                     else:
                         st.error(message)
