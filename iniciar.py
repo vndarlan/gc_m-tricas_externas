@@ -62,15 +62,15 @@ def main():
                     st.Page("principal/home.py", title="Home", icon="🏠"),
                 ],
                 "Vendas": [
-                    st.Page("vendas/dropi_+_shopify.py",   title="Dropi + Shopify",   icon="🇲🇽"),
+                    st.Page("vendas/dropi_+_shopify.py",   title="Dropi + Shopify",   icon="📦"),
                 ],
                 "Plataformas de Anúncios": [
-                    st.Page("plataformas_de_anuncio/facebook.py",   title="Facebook",   icon="🇲🇽"),
-                    st.Page("plataformas_de_anuncio/tiktok.py",   title="Tiktok",   icon="🇲🇽"),
-                    st.Page("plataformas_de_anuncio/google.py",   title="Google",   icon="🇲🇽"),
+                    st.Page("plataformas_de_anuncio/facebook.py",   title="Facebook",   icon="📢"),
+                    st.Page("plataformas_de_anuncio/tiktok.py",   title="Tiktok",   icon="📢"),
+                    st.Page("plataformas_de_anuncio/google.py",   title="Google",   icon="📢"),
                 ],
                 "Administração": [
-                    st.Page("administracao/admin.py",   title="Adm",   icon="🇲🇽"),
+                    st.Page("administracao/admin.py",   title="Adm",   icon="⚙️"),
                 ],
             }
 
@@ -81,12 +81,12 @@ def main():
                     st.Page("principal/home.py", title="Home", icon="🏠"),
                 ],
                 "Vendas": [
-                    st.Page("vendas/dropi_+_shopify.py",   title="Dropi + Shopify",   icon="🇲🇽"),
+                    st.Page("vendas/dropi_+_shopify.py",   title="Dropi + Shopify",   icon="📦"),
                 ],
                 "Plataformas de Anúncios": [
-                    st.Page("plataformas_de_anuncio/facebook.py",   title="Facebook",   icon="🇲🇽"),
-                    st.Page("plataformas_de_anuncio/tiktok.py",   title="Tiktok",   icon="🇲🇽"),
-                    st.Page("plataformas_de_anuncio/google.py",   title="Google",   icon="🇲🇽"),
+                    st.Page("plataformas_de_anuncio/facebook.py",   title="Facebook",   icon="📢"),
+                    st.Page("plataformas_de_anuncio/tiktok.py",   title="Tiktok",   icon="📢"),
+                    st.Page("plataformas_de_anuncio/google.py",   title="Google",   icon="📢"),
                 ],
             }
 

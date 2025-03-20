@@ -1429,6 +1429,7 @@ def display_sidebar_filters(store):
     
     # Seção Shopify
     with st.sidebar.expander("Filtros Shopify", expanded=True):
+        st.sidebar.markdown("### Dropi")
         # Filtro de Data
         st.sidebar.markdown("#### Período")
         col1, col2 = st.sidebar.columns(2)
@@ -1446,7 +1447,7 @@ def display_sidebar_filters(store):
             )
         
         # Filtro de Categoria de URL
-        st.sidebar.markdown("#### Filtro de Origem")
+        st.sidebar.markdown("#### Plataforma de Anúncio")
         url_categories = get_url_categories(store["id"], start_date.strftime("%Y-%m-%d"), end_date.strftime("%Y-%m-%d"))
         if url_categories:
             category_options = ["Todos"] + url_categories
@@ -1460,6 +1461,7 @@ def display_sidebar_filters(store):
     # Seção DroPi
     with st.sidebar.expander("Filtros DroPi", expanded=True):
         # Substituir as opções de período por seleção de data
+        st.sidebar.markdown("### Dropi")
         dropi_col1, dropi_col2 = st.sidebar.columns(2)
         
         with dropi_col1:
@@ -2242,9 +2244,6 @@ try:
 except Exception as e:
     st.error(f"Erro ao atualizar esquema do banco: {str(e)}")
 
-# Sidebar para seleção de loja
-st.sidebar.title("Seleção de Loja")
-
 # Carregar lojas existentes (usando a função do db_utils)
 stores = load_stores()
 store_options = ["Selecione uma loja..."] + [store[1] for store in stores] + ["➕ Cadastrar Nova Loja"]
@@ -2336,5 +2335,5 @@ if selected_store:
     store_dashboard(selected_store)
 else:
     # Tela inicial quando nenhuma loja está selecionada
-    st.title("Bem-vindo ao Dashboard Shopify & DroPi")
+    st.title("Bem-vindo ao Dashboard Shopify + DroPi")
     st.write("Selecione uma loja no menu lateral ou cadastre uma nova para começar.")
