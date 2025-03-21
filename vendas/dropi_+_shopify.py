@@ -243,7 +243,7 @@ def get_exchange_rate(from_currency, to_currency):
 
 # Funções para Shopify
 def get_shopify_products(url, headers):
-    """Consulta produtos da Shopify para obter os URLs."""
+    """Consulta produtos da Shopify para obter os URLs e imagens."""
     query = """
     query getProducts($cursor: String) {
       products(first: 50, after: $cursor) {
@@ -253,6 +253,13 @@ def get_shopify_products(url, headers):
             title
             handle
             onlineStoreUrl
+            images(first: 1) {
+              edges {
+                node {
+                  originalSrc
+                }
+              }
+            }
           }
         }
         pageInfo {
@@ -297,8 +304,10 @@ def get_shopify_products(url, headers):
             st.error(f"Erro ao acessar a API Shopify: {str(e)}")
             break
     
-    # Criar um dicionário de produtos por handle
+    # Criar dicionário de produtos com URLs e imagens
     product_urls = {}
+    product_images = {}
+    
     for product_edge in all_products:
         product = product_edge.get("node", {})
         title = product.get("title", "")
@@ -308,10 +317,17 @@ def get_shopify_products(url, headers):
         if not url and handle:
             # Se a URL não estiver disponível, construa-a a partir do handle
             url = f"/products/{handle}"
-            
+        
+        # Extrair URL da imagem
+        image_url = ""
+        images = product.get("images", {}).get("edges", [])
+        if images and len(images) > 0:
+            image_url = images[0].get("node", {}).get("originalSrc", "")
+        
         product_urls[title] = url
+        product_images[title] = image_url
     
-    return product_urls
+    return product_urls, product_images
 
 def get_shopify_orders(url, headers, start_date, end_date):
     """Consulta pedidos da Shopify no intervalo de datas especificado."""
@@ -389,13 +405,14 @@ def get_shopify_orders(url, headers, start_date, end_date):
     
     return all_orders
 
-def process_shopify_products(orders, product_urls):
+def process_shopify_products(orders, product_urls, product_images):
     """Processa pedidos e retorna dicionários com contagens e valores por produto."""
     product_total = {}
     product_processed = {}
     product_delivered = {}
     product_url_map = {}
-    product_value = {}  # Novo dicionário para armazenar valores totais
+    product_image_map = {}  # Novo dicionário para imagens
+    product_value = {}      # Para armazenar valores totais
     
     for order_edge in orders:
         order_node = order_edge.get("node", {})
@@ -426,6 +443,12 @@ def process_shopify_products(orders, product_urls):
             else:
                 product_url_map[product_title] = ""
             
+            # Armazenar imagem do produto
+            if product_title in product_images:
+                product_image_map[product_title] = product_images[product_title]
+            else:
+                product_image_map[product_title] = ""
+            
             # Adicionar ao total de pedidos
             if product_title in product_total:
                 product_total[product_title] += quantity
@@ -452,14 +475,29 @@ def process_shopify_products(orders, product_urls):
                 else:
                     product_delivered[product_title] = quantity
     
-    return product_total, product_processed, product_delivered, product_url_map, product_value
+    return product_total, product_processed, product_delivered, product_url_map, product_value, product_image_map
 
-def save_metrics_to_db(store_id, date, product_total, product_processed, product_delivered, product_url_map, product_value):
+def save_metrics_to_db(store_id, date, product_total, product_processed, product_delivered, product_url_map, product_value, product_image_map):
     """Salva as métricas no banco de dados."""
     conn = get_db_connection()
     cursor = conn.cursor()
     
     try:
+        # Verificar se a coluna product_image_url existe
+        try:
+            # Tente fazer um select para ver se a coluna existe
+            cursor.execute("SELECT product_image_url FROM product_metrics LIMIT 1")
+        except:
+            # Se der erro, a coluna não existe e precisamos criá-la
+            logger.info("Adicionando coluna product_image_url à tabela product_metrics")
+            if is_railway_environment():
+                # PostgreSQL
+                cursor.execute("ALTER TABLE product_metrics ADD COLUMN IF NOT EXISTS product_image_url TEXT")
+            else:
+                # SQLite
+                cursor.execute("ALTER TABLE product_metrics ADD COLUMN product_image_url TEXT")
+            conn.commit()
+        
         # Limpar dados existentes para este período
         delete_query = "DELETE FROM product_metrics WHERE store_id = ? AND date = ?"
         if is_railway_environment():
@@ -475,6 +513,7 @@ def save_metrics_to_db(store_id, date, product_total, product_processed, product
                 "date": date, 
                 "product": product,
                 "product_url": product_url_map.get(product, ""),
+                "product_image_url": product_image_map.get(product, ""),  # Nova coluna para imagem
                 "total_orders": product_total.get(product, 0),
                 "processed_orders": product_processed.get(product, 0),
                 "delivered_orders": product_delivered.get(product, 0),
@@ -1531,7 +1570,7 @@ def display_sidebar_filters(store):
     }
 
 def display_shopify_data(data, selected_category):
-    """Exibe os dados da Shopify em tabelas colapsáveis com quatro colunas: produto, total de pedidos, valor total e URL."""
+    """Exibe os dados da Shopify em tabelas colapsáveis com produto, imagem, total de pedidos, valor total e URL."""
     
     if not data.empty:
         # Filtrar dados por categoria de URL, se selecionado
@@ -1550,13 +1589,19 @@ def display_shopify_data(data, selected_category):
         # Agrupar dados por produto
         if not filtered_data.empty:
             # Preparar os dados para agrupamento
-            # Como URLs podem ser diferentes para mesmo produto, pegamos a primeira URL para cada produto
+            # Como URLs e imagens podem ser diferentes para mesmo produto, pegamos a primeira URL e imagem para cada produto
             url_mapping = {}
+            image_mapping = {}
             for _, row in filtered_data.iterrows():
                 product = row['product']
                 url = row.get('product_url', '')
+                image = row.get('product_image_url', '')
+                
                 if product not in url_mapping and url:
                     url_mapping[product] = url
+                    
+                if product not in image_mapping and image:
+                    image_mapping[product] = image
             
             # Verificar se a coluna total_value existe
             if 'total_value' in filtered_data.columns:
@@ -1573,17 +1618,19 @@ def display_shopify_data(data, selected_category):
                 }).reset_index()
                 product_data['valor_formatado'] = "$0.00"  # Adicionar coluna vazia se não existir
             
-            # Adicionar coluna de URL
+            # Adicionar coluna de URL e imagem
             product_data['url'] = product_data['product'].map(url_mapping)
+            product_data['image'] = product_data['product'].map(image_mapping)
             
             # Exibir tabela com dados agrupados
             with st.expander("Tabela de Produtos Shopify", expanded=True):
                 # Selecionar apenas as colunas que queremos exibir (removendo total_value que é redundante)
-                display_df = product_data[['product', 'total_orders', 'valor_formatado', 'url']]
+                display_df = product_data[['image', 'product', 'total_orders', 'valor_formatado', 'url']]
                 
                 st.dataframe(
                     display_df,
                     column_config={
+                        "image": st.column_config.ImageColumn("Imagem", help="Imagem do produto"),
                         "product": "Produto",
                         "total_orders": "Total de Pedidos",
                         "valor_formatado": "Valor Total",
@@ -2111,11 +2158,11 @@ def store_dashboard(store):
     if shopify_filters['update_clicked']:
         # Atualizar dados da Shopify
         with st.spinner("Atualizando dados da Shopify..."):
-            product_urls = get_shopify_products(URL, HEADERS)
+            product_urls, product_images = get_shopify_products(URL, HEADERS)
             orders = get_shopify_orders(URL, HEADERS, start_date_str, end_date_str)
             
             if orders:
-                product_total, product_processed, product_delivered, product_url_map, product_value = process_shopify_products(orders, product_urls)
+                product_total, product_processed, product_delivered, product_url_map, product_value, product_image_map = process_shopify_products(orders, product_urls, product_images)
                 
                 # Limpar dados antigos para esse período
                 try:
@@ -2125,7 +2172,7 @@ def store_dashboard(store):
                     st.error(f"Erro ao limpar dados antigos: {str(e)}")
                 
                 # Salvar os novos dados
-                save_metrics_to_db(store["id"], start_date_str, product_total, product_processed, product_delivered, product_url_map, product_value)
+                save_metrics_to_db(store["id"], start_date_str, product_total, product_processed, product_delivered, product_url_map, product_value, product_image_map)
                 
                 st.success("Dados da Shopify atualizados com sucesso!")
 
