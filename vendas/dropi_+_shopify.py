@@ -1484,88 +1484,177 @@ def save_dropi_metrics_to_db(store_id, date_str, products_data, start_date_str=N
         start_date_str = date_str
     if not end_date_str:
         end_date_str = date_str
-        
+    
+    # PRIMEIRA ETAPA: Verificar e adicionar a coluna image_url se necessário
+    conn = None
+    added_column = False
+    
     try:
-        # Verificar se a coluna image_url existe
+        # Obter nova conexão para verificar o esquema
         conn = get_db_connection()
         cursor = conn.cursor()
         
+        # Verificar se a coluna image_url existe
         try:
             # Tente fazer um select para ver se a coluna existe
             cursor.execute("SELECT image_url FROM dropi_metrics LIMIT 1")
-        except:
-            # Se der erro, a coluna não existe e precisamos criá-la
+            # Se chegou aqui, a coluna existe
+            conn.close()
+            conn = None
+        except Exception as schema_error:
+            # A coluna não existe, fechamos esta conexão e abrimos uma nova
+            if conn:
+                try:
+                    conn.rollback()
+                    conn.close()
+                except:
+                    pass
+                conn = None
+            
+            # Criar uma nova conexão para adicionar a coluna
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            
+            # Adicionar coluna image_url
             logger.info("Adicionando coluna image_url à tabela dropi_metrics")
             
             try:
                 if is_railway_environment():
                     # PostgreSQL
-                    cursor.execute("ALTER TABLE dropi_metrics ADD COLUMN IF NOT EXISTS image_url TEXT")
+                    cursor.execute("ALTER TABLE dropi_metrics ADD COLUMN image_url TEXT")
+                    added_column = True
                 else:
                     # SQLite
                     cursor.execute("ALTER TABLE dropi_metrics ADD COLUMN image_url TEXT")
+                    added_column = True
+                
                 conn.commit()
-            except Exception as e:
-                logger.error(f"Erro ao adicionar coluna image_url: {str(e)}")
-                conn.rollback()
-                # Continuar mesmo com erro
+                logger.info("Coluna image_url adicionada com sucesso")
+            except Exception as alter_error:
+                if conn:
+                    conn.rollback()
+                logger.error(f"Erro ao adicionar coluna image_url: {str(alter_error)}")
             finally:
+                if conn:
+                    conn.close()
+                conn = None
+    except Exception as check_error:
+        if conn:
+            try:
+                conn.rollback()
                 conn.close()
-        else:
-            conn.close()
-        
-        # Remover dados existentes para este intervalo específico
+            except:
+                pass
+        logger.error(f"Erro ao verificar esquema: {str(check_error)}")
+    
+    # SEGUNDA ETAPA: Remover dados existentes para o período
+    try:
+        # Usar execute_query da db_utils para maior segurança
         from db_utils import execute_query
         delete_query = """
             DELETE FROM dropi_metrics 
             WHERE store_id = ? 
-              AND date_start = ? 
-              AND date_end = ?
+              AND date = ? 
         """
-        execute_query(delete_query, (store_id, start_date_str, end_date_str))
+        execute_query(delete_query, (store_id, date_str))
         
-        # Verificar se há produtos duplicados e agrupá-los
-        product_names = {}
-        for product in products_data:
-            product_name = product["product"]
-            if product_name in product_names:
-                logger.warning(f"Produto duplicado encontrado: {product_name}")
-                # Somar os valores para dados duplicados
-                for key in ["orders_count", "orders_value", "transit_count", "transit_value", 
-                           "delivered_count", "delivered_value", "profits"]:
-                    product_names[product_name][key] += product[key]
-            else:
-                product_names[product_name] = product
+        # Se temos intervalo de datas, também removemos por esse critério
+        if start_date_str and end_date_str:
+            delete_interval_query = """
+                DELETE FROM dropi_metrics 
+                WHERE store_id = ? 
+                  AND date_start = ? 
+                  AND date_end = ?
+            """
+            execute_query(delete_interval_query, (store_id, start_date_str, end_date_str))
         
-        # Inserir novos dados
-        from db_utils import execute_upsert
-        for product_name, product in product_names.items():
-            data = {
-                "store_id": store_id,
-                "date": date_str,  # Mantido para compatibilidade
-                "date_start": start_date_str,  # Nova coluna
-                "date_end": end_date_str,      # Nova coluna
-                "product": product_name,
-                "provider": product["provider"],
-                "stock": product["stock"],
-                "orders_count": product["orders_count"],
-                "orders_value": product["orders_value"],
-                "transit_count": product["transit_count"],
-                "transit_value": product["transit_value"],
-                "delivered_count": product["delivered_count"],
-                "delivered_value": product["delivered_value"],
-                "profits": product["profits"],
-                "image_url": product.get("image_url", "")  # Nova coluna para imagem
-            }
+        logger.info(f"Dados antigos removidos para o período {start_date_str} a {end_date_str}")
+        
+    except Exception as delete_error:
+        logger.error(f"Erro ao remover dados existentes: {str(delete_error)}")
+    
+    # TERCEIRA ETAPA: Verificar se há produtos duplicados e agrupá-los
+    product_names = {}
+    for product in products_data:
+        product_name = product.get("product", "")
+        if not product_name:
+            continue
             
-            execute_upsert("dropi_metrics", data, ["store_id", "date", "product"])
-            logger.info(f"Inserido/atualizado produto: {product_name}")
-        
-        logger.info(f"Transação concluída com sucesso: {len(product_names)} produtos salvos")
+        if product_name in product_names:
+            logger.warning(f"Produto duplicado encontrado: {product_name}")
+            # Somar os valores para dados duplicados
+            for key in ["orders_count", "orders_value", "transit_count", "transit_value", 
+                       "delivered_count", "delivered_value", "profits"]:
+                product_names[product_name][key] += product.get(key, 0)
+        else:
+            product_names[product_name] = product
+    
+    # QUARTA ETAPA: Inserir novos dados
+    # Se adicionamos a coluna agora, esperamos alguns segundos para o PostgreSQL processar
+    if added_column and is_railway_environment():
+        time.sleep(2)
+    
+    success = True
+    inserted_count = 0
+    
+    # Adicionar dados produto por produto, com tratamento individual de erros
+    for product_name, product in product_names.items():
+        try:
+            # Se adicionamos a coluna recentemente, tentamos sem a coluna de imagem primeiro
+            if added_column and is_railway_environment():
+                data = {
+                    "store_id": store_id,
+                    "date": date_str,  # Mantido para compatibilidade
+                    "date_start": start_date_str,  # Nova coluna
+                    "date_end": end_date_str,      # Nova coluna
+                    "product": product_name,
+                    "provider": product.get("provider", ""),
+                    "stock": product.get("stock", 0),
+                    "orders_count": product.get("orders_count", 0),
+                    "orders_value": product.get("orders_value", 0),
+                    "transit_count": product.get("transit_count", 0),
+                    "transit_value": product.get("transit_value", 0),
+                    "delivered_count": product.get("delivered_count", 0),
+                    "delivered_value": product.get("delivered_value", 0),
+                    "profits": product.get("profits", 0)
+                }
+            else:
+                # Versão completa com imagem
+                data = {
+                    "store_id": store_id,
+                    "date": date_str,  # Mantido para compatibilidade
+                    "date_start": start_date_str,  # Nova coluna
+                    "date_end": end_date_str,      # Nova coluna
+                    "product": product_name,
+                    "provider": product.get("provider", ""),
+                    "stock": product.get("stock", 0),
+                    "orders_count": product.get("orders_count", 0),
+                    "orders_value": product.get("orders_value", 0),
+                    "transit_count": product.get("transit_count", 0),
+                    "transit_value": product.get("transit_value", 0),
+                    "delivered_count": product.get("delivered_count", 0),
+                    "delivered_value": product.get("delivered_value", 0),
+                    "profits": product.get("profits", 0),
+                    "image_url": product.get("image_url", "")  # Nova coluna para imagem
+                }
+            
+            # Usar a função execute_upsert do db_utils
+            from db_utils import execute_upsert
+            result = execute_upsert("dropi_metrics", data, ["store_id", "date", "product"])
+            if result:
+                inserted_count += 1
+                logger.info(f"Inserido/atualizado produto: {product_name}")
+            
+        except Exception as insert_error:
+            success = False
+            logger.error(f"Erro ao inserir produto '{product_name}': {str(insert_error)}")
+    
+    # Registrar resultado final
+    if inserted_count > 0:
+        logger.info(f"Transação concluída: {inserted_count} de {len(product_names)} produtos salvos")
         return True
-        
-    except Exception as e:
-        logger.error(f"Erro ao salvar dados no banco: {str(e)}")
+    else:
+        logger.error("Nenhum produto foi salvo no banco de dados")
         return False
 
 # === FUNÇÕES PARA O LAYOUT MELHORADO ===
