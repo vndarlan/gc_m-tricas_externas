@@ -479,24 +479,51 @@ def process_shopify_products(orders, product_urls, product_images):
 
 def save_metrics_to_db(store_id, date, product_total, product_processed, product_delivered, product_url_map, product_value, product_image_map):
     """Salva as métricas no banco de dados."""
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    
+    conn = None
     try:
-        # Verificar se a coluna product_image_url existe
+        # Obter nova conexão
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Verificar se a coluna product_image_url existe em uma transação separada
         try:
             # Tente fazer um select para ver se a coluna existe
             cursor.execute("SELECT product_image_url FROM product_metrics LIMIT 1")
-        except:
+        except Exception as schema_error:
             # Se der erro, a coluna não existe e precisamos criá-la
             logger.info("Adicionando coluna product_image_url à tabela product_metrics")
-            if is_railway_environment():
-                # PostgreSQL
-                cursor.execute("ALTER TABLE product_metrics ADD COLUMN IF NOT EXISTS product_image_url TEXT")
-            else:
-                # SQLite
-                cursor.execute("ALTER TABLE product_metrics ADD COLUMN product_image_url TEXT")
-            conn.commit()
+            
+            # Certifique-se de que qualquer transação abortada seja finalizada
+            try:
+                conn.rollback()
+            except:
+                pass
+                
+            # Feche a conexão e abra uma nova
+            cursor.close()
+            conn.close()
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            
+            # Adicionar coluna em uma nova transação
+            try:
+                if is_railway_environment():
+                    # PostgreSQL
+                    cursor.execute("ALTER TABLE product_metrics ADD COLUMN IF NOT EXISTS product_image_url TEXT")
+                else:
+                    # SQLite
+                    cursor.execute("ALTER TABLE product_metrics ADD COLUMN product_image_url TEXT")
+                conn.commit()
+            except Exception as alter_error:
+                logger.error(f"Erro ao adicionar coluna: {str(alter_error)}")
+                conn.rollback()
+                # Continuar mesmo assim, talvez a coluna já exista em outro formato
+        
+        # Feche e reabra a conexão para garantir que começamos com uma transação limpa
+        cursor.close()
+        conn.close()
+        conn = get_db_connection()
+        cursor = conn.cursor()
         
         # Limpar dados existentes para este período
         delete_query = "DELETE FROM product_metrics WHERE store_id = ? AND date = ?"
@@ -506,7 +533,7 @@ def save_metrics_to_db(store_id, date, product_total, product_processed, product
         cursor.execute(delete_query, (store_id, date))
         conn.commit()
         
-        # Inserir novos dados
+        # Inserir novos dados - em uma nova transação
         for product in product_total:
             data = {
                 "store_id": store_id,
@@ -521,12 +548,26 @@ def save_metrics_to_db(store_id, date, product_total, product_processed, product
             }
             
             execute_upsert("product_metrics", data, ["store_id", "date", "product"])
+        
+        logger.info(f"Métricas salvas com sucesso para {len(product_total)} produtos")
+        return True
+        
     except Exception as e:
         logger.error(f"Erro ao salvar métricas: {str(e)}")
-        conn.rollback()
+        if conn:
+            try:
+                conn.rollback()
+            except:
+                pass
         st.error(f"Erro ao salvar dados: {str(e)}")
+        return False
+        
     finally:
-        conn.close()
+        if conn:
+            try:
+                conn.close()
+            except:
+                pass
 
 def get_url_categories(store_id, start_date_str, end_date_str):
     """Obtém as categorias de URLs (Google, TikTok, Facebook) com base nos padrões nas URLs."""
