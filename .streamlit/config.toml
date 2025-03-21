@@ -1,17 +1,18 @@
 [theme]
-base="dark"
-
-# Mesma cor primária laranja
-primaryColor="#FF8C00"
-
-# Cor de fundo bem escura
-backgroundColor="#000000"
-
-# Fundo secundário (sidebar) ligeiramente mais claro
-secondaryBackgroundColor="#333333"
-
-# Cor do texto (branca)
-textColor="#FFFFFF"
+# Cores primárias
+primaryColor = "#00774D"  # Verde Tracky para botões e elementos interativos
+backgroundColor = "#EBF3EF"  # Fundo geral muito claro
+secondaryBackgroundColor = "#ffffff"  # Fundo de cards e containers
+textColor = "#333333"  # Cor do texto principal
 
 # Fonte
-font="serif"
+font = "sans-serif"
+
+[server]
+enableStaticServing = true
+
+[browser]
+gatherUsageStats = false
+
+[global]
+showWarningOnDirectExecution = false
