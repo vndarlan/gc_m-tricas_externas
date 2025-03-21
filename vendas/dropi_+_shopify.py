@@ -1288,6 +1288,43 @@ def extract_product_data(driver, logger):
                 # Para debug
                 logger.info(f"Processando card #{i+1}:\n{card_text[:100]}...")
                 
+                # Tentar extrair a imagem do produto - procurando um elemento img no card ou no elemento anterior
+                image_url = ""
+                try:
+                    # Primeiro tenta encontrar imagem dentro do card atual
+                    img_elements = card.find_elements(By.XPATH, ".//img")
+                    if img_elements:
+                        image_url = img_elements[0].get_attribute("src")
+                        logger.info(f"Imagem encontrada no card: {image_url}")
+                    else:
+                        # Se não encontrar, tenta em elementos próximos
+                        try:
+                            # Tenta elemento pai que pode conter a imagem
+                            parent = card.find_element(By.XPATH, "..")
+                            img_elements = parent.find_elements(By.XPATH, ".//img")
+                            if img_elements:
+                                image_url = img_elements[0].get_attribute("src")
+                                logger.info(f"Imagem encontrada no pai: {image_url}")
+                        except:
+                            pass
+                            
+                        # Tenta elemento anterior que pode conter a imagem
+                        try:
+                            # Usando JavaScript para acessar o elemento irmão anterior
+                            sibling_img = driver.execute_script("""
+                                var el = arguments[0];
+                                var sibling = el.previousElementSibling;
+                                return sibling ? sibling.querySelector('img') : null;
+                            """, card)
+                            
+                            if sibling_img:
+                                image_url = sibling_img.get_attribute("src")
+                                logger.info(f"Imagem encontrada no irmão anterior via JS: {image_url}")
+                        except Exception as e:
+                            logger.warning(f"Erro ao tentar encontrar imagem no elemento adjacente: {str(e)}")
+                except Exception as e:
+                    logger.warning(f"Erro ao buscar imagem para o produto: {str(e)}")
+                
                 # Extrair nome do produto (geralmente o primeiro texto substancial no card)
                 lines = card_text.split('\n')
                 if not lines:
@@ -1322,7 +1359,8 @@ def extract_product_data(driver, logger):
                     "transit_value": 0.0,
                     "delivered_count": 0,
                     "delivered_value": 0.0,
-                    "profits": 0.0
+                    "profits": 0.0,
+                    "image_url": image_url  # Adicionando URL da imagem
                 }
                 
                 # Extrair informações específicas deste card apenas
@@ -1448,6 +1486,34 @@ def save_dropi_metrics_to_db(store_id, date_str, products_data, start_date_str=N
         end_date_str = date_str
         
     try:
+        # Verificar se a coluna image_url existe
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        try:
+            # Tente fazer um select para ver se a coluna existe
+            cursor.execute("SELECT image_url FROM dropi_metrics LIMIT 1")
+        except:
+            # Se der erro, a coluna não existe e precisamos criá-la
+            logger.info("Adicionando coluna image_url à tabela dropi_metrics")
+            
+            try:
+                if is_railway_environment():
+                    # PostgreSQL
+                    cursor.execute("ALTER TABLE dropi_metrics ADD COLUMN IF NOT EXISTS image_url TEXT")
+                else:
+                    # SQLite
+                    cursor.execute("ALTER TABLE dropi_metrics ADD COLUMN image_url TEXT")
+                conn.commit()
+            except Exception as e:
+                logger.error(f"Erro ao adicionar coluna image_url: {str(e)}")
+                conn.rollback()
+                # Continuar mesmo com erro
+            finally:
+                conn.close()
+        else:
+            conn.close()
+        
         # Remover dados existentes para este intervalo específico
         from db_utils import execute_query
         delete_query = """
@@ -1488,7 +1554,8 @@ def save_dropi_metrics_to_db(store_id, date_str, products_data, start_date_str=N
                 "transit_value": product["transit_value"],
                 "delivered_count": product["delivered_count"],
                 "delivered_value": product["delivered_value"],
-                "profits": product["profits"]
+                "profits": product["profits"],
+                "image_url": product.get("image_url", "")  # Nova coluna para imagem
             }
             
             execute_upsert("dropi_metrics", data, ["store_id", "date", "product"])
@@ -1813,14 +1880,23 @@ def display_dropi_data(store_id, start_date_str, end_date_str):
             # 1. Ocultar store_id
             # 2. Remover a coluna 'date' (redundante)
             # 3. Renomear date_start e date_end
+            # 4. Adicionar coluna de imagem
             
             # Primeiro, criar uma cópia do DataFrame sem a coluna 'date'
             display_df = data_df.drop(columns=['date'], errors='ignore')
+            
+            # Reorganizar colunas para mostrar imagem primeiro se existir
+            if 'image_url' in display_df.columns:
+                cols = display_df.columns.tolist()
+                cols.remove('image_url')
+                cols = ['image_url'] + cols
+                display_df = display_df[cols]
             
             st.dataframe(
                 display_df,
                 column_config={
                     "store_id": None,  # Ocultar esta coluna
+                    "image_url": st.column_config.ImageColumn("Imagem", help="Imagem do produto"),
                     "date_start": st.column_config.TextColumn("Data Inicial"),
                     "date_end": st.column_config.TextColumn("Data Final"),
                     "product": "Produto",
