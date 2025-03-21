@@ -1470,15 +1470,7 @@ def extract_product_data(driver, logger):
         return []
 
 def save_dropi_metrics_to_db(store_id, date_str, products_data, start_date_str=None, end_date_str=None):
-    """Save DroPi product metrics to the database with date interval support.
-    
-    Args:
-        store_id: ID da loja
-        date_str: Data de referência (geralmente a data final)
-        products_data: Lista de dados de produtos
-        start_date_str: Data inicial do intervalo (opcional)
-        end_date_str: Data final do intervalo (opcional)
-    """
+    """Save DroPi product metrics to the database with date interval support."""
     # Se as datas de início e fim não foram fornecidas, use a data de referência para ambas
     if not start_date_str:
         start_date_str = date_str
@@ -1487,93 +1479,86 @@ def save_dropi_metrics_to_db(store_id, date_str, products_data, start_date_str=N
     
     # PRIMEIRA ETAPA: Verificar e adicionar a coluna image_url se necessário
     conn = None
-    added_column = False
-    
     try:
-        # Obter nova conexão para verificar o esquema
         conn = get_db_connection()
         cursor = conn.cursor()
         
         # Verificar se a coluna image_url existe
+        column_exists = False
         try:
             # Tente fazer um select para ver se a coluna existe
             cursor.execute("SELECT image_url FROM dropi_metrics LIMIT 1")
-            # Se chegou aqui, a coluna existe
-            conn.close()
-            conn = None
-        except Exception as schema_error:
-            # A coluna não existe, fechamos esta conexão e abrimos uma nova
-            if conn:
-                try:
-                    conn.rollback()
-                    conn.close()
-                except:
-                    pass
-                conn = None
+            column_exists = True
+        except:
+            logger.info("Coluna image_url não encontrada. Tentando adicionar...")
             
-            # Criar uma nova conexão para adicionar a coluna
-            conn = get_db_connection()
-            cursor = conn.cursor()
-            
-            # Adicionar coluna image_url
-            logger.info("Adicionando coluna image_url à tabela dropi_metrics")
-            
+        if not column_exists:
             try:
+                # Adicionar a coluna
                 if is_railway_environment():
-                    # PostgreSQL
                     cursor.execute("ALTER TABLE dropi_metrics ADD COLUMN image_url TEXT")
-                    added_column = True
                 else:
-                    # SQLite
                     cursor.execute("ALTER TABLE dropi_metrics ADD COLUMN image_url TEXT")
-                    added_column = True
-                
                 conn.commit()
                 logger.info("Coluna image_url adicionada com sucesso")
-            except Exception as alter_error:
-                if conn:
-                    conn.rollback()
-                logger.error(f"Erro ao adicionar coluna image_url: {str(alter_error)}")
-            finally:
-                if conn:
-                    conn.close()
-                conn = None
-    except Exception as check_error:
+            except Exception as e:
+                logger.error(f"Erro ao adicionar coluna: {str(e)}")
+                conn.rollback()
+        
+        cursor.close()
+        conn.close()
+    except Exception as e:
+        logger.error(f"Erro ao verificar/adicionar coluna: {str(e)}")
         if conn:
             try:
                 conn.rollback()
                 conn.close()
             except:
                 pass
-        logger.error(f"Erro ao verificar esquema: {str(check_error)}")
     
     # SEGUNDA ETAPA: Remover dados existentes para o período
     try:
-        # Usar execute_query da db_utils para maior segurança
-        from db_utils import execute_query
-        delete_query = """
-            DELETE FROM dropi_metrics 
-            WHERE store_id = ? 
-              AND date = ? 
-        """
-        execute_query(delete_query, (store_id, date_str))
+        conn = get_db_connection()
+        cursor = conn.cursor()
         
-        # Se temos intervalo de datas, também removemos por esse critério
-        if start_date_str and end_date_str:
-            delete_interval_query = """
+        # Delete existing records for the date range
+        if is_railway_environment():
+            cursor.execute("""
                 DELETE FROM dropi_metrics 
-                WHERE store_id = ? 
-                  AND date_start = ? 
-                  AND date_end = ?
-            """
-            execute_query(delete_interval_query, (store_id, start_date_str, end_date_str))
+                WHERE store_id = %s AND date = %s
+            """, (store_id, date_str))
+            
+            if start_date_str and end_date_str:
+                cursor.execute("""
+                    DELETE FROM dropi_metrics 
+                    WHERE store_id = %s AND date_start = %s AND date_end = %s
+                """, (store_id, start_date_str, end_date_str))
+        else:
+            cursor.execute("""
+                DELETE FROM dropi_metrics 
+                WHERE store_id = ? AND date = ?
+            """, (store_id, date_str))
+            
+            if start_date_str and end_date_str:
+                cursor.execute("""
+                    DELETE FROM dropi_metrics 
+                    WHERE store_id = ? AND date_start = ? AND date_end = ?
+                """, (store_id, start_date_str, end_date_str))
         
+        conn.commit()
         logger.info(f"Dados antigos removidos para o período {start_date_str} a {end_date_str}")
-        
-    except Exception as delete_error:
-        logger.error(f"Erro ao remover dados existentes: {str(delete_error)}")
+        cursor.close()
+        conn.close()
+    except Exception as e:
+        logger.error(f"Erro ao remover dados existentes: {str(e)}")
+        if conn:
+            try:
+                conn.rollback()
+                conn.close()
+            except:
+                pass
     
-    # TERCEIRA ETAPA: Verificar se há produtos duplicados e agrupá-los
+    # TERCEIRA ETAPA: Agrupar produtos duplicados
     product_names = {}
     for product in products_data:
         product_name = product.get("product", "")
@@ -1586,76 +1571,75 @@ def save_dropi_metrics_to_db(store_id, date_str, products_data, start_date_str=N
             for key in ["orders_count", "orders_value", "transit_count", "transit_value", 
                        "delivered_count", "delivered_value", "profits"]:
                 product_names[product_name][key] += product.get(key, 0)
+            # Para campos que não são numéricos, manter o valor não vazio
+            if not product_names[product_name].get("image_url") and product.get("image_url"):
+                product_names[product_name]["image_url"] = product.get("image_url")
+            if not product_names[product_name].get("provider") and product.get("provider"):
+                product_names[product_name]["provider"] = product.get("provider")
         else:
             product_names[product_name] = product
     
-    # QUARTA ETAPA: Inserir novos dados
-    # Se adicionamos a coluna agora, esperamos alguns segundos para o PostgreSQL processar
-    if added_column and is_railway_environment():
-        time.sleep(2)
-    
-    success = True
-    inserted_count = 0
-    
-    # Adicionar dados produto por produto, com tratamento individual de erros
+    # QUARTA ETAPA: Inserir os dados produto por produto
+    saved_count = 0
     for product_name, product in product_names.items():
         try:
-            # Se adicionamos a coluna recentemente, tentamos sem a coluna de imagem primeiro
-            if added_column and is_railway_environment():
-                data = {
-                    "store_id": store_id,
-                    "date": date_str,  # Mantido para compatibilidade
-                    "date_start": start_date_str,  # Nova coluna
-                    "date_end": end_date_str,      # Nova coluna
-                    "product": product_name,
-                    "provider": product.get("provider", ""),
-                    "stock": product.get("stock", 0),
-                    "orders_count": product.get("orders_count", 0),
-                    "orders_value": product.get("orders_value", 0),
-                    "transit_count": product.get("transit_count", 0),
-                    "transit_value": product.get("transit_value", 0),
-                    "delivered_count": product.get("delivered_count", 0),
-                    "delivered_value": product.get("delivered_value", 0),
-                    "profits": product.get("profits", 0)
-                }
+            # Use raw SQL para maior controle e debug
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            
+            # Insert with all fields explicitly defined
+            if is_railway_environment():
+                cursor.execute("""
+                    INSERT INTO dropi_metrics (
+                        store_id, date, date_start, date_end, product, provider, stock,
+                        orders_count, orders_value, transit_count, transit_value,
+                        delivered_count, delivered_value, profits, image_url
+                    ) VALUES (
+                        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+                    )
+                """, (
+                    store_id, date_str, start_date_str, end_date_str, 
+                    product_name, product.get("provider", ""), product.get("stock", 0),
+                    product.get("orders_count", 0), product.get("orders_value", 0),
+                    product.get("transit_count", 0), product.get("transit_value", 0),
+                    product.get("delivered_count", 0), product.get("delivered_value", 0),
+                    product.get("profits", 0), product.get("image_url", "")
+                ))
             else:
-                # Versão completa com imagem
-                data = {
-                    "store_id": store_id,
-                    "date": date_str,  # Mantido para compatibilidade
-                    "date_start": start_date_str,  # Nova coluna
-                    "date_end": end_date_str,      # Nova coluna
-                    "product": product_name,
-                    "provider": product.get("provider", ""),
-                    "stock": product.get("stock", 0),
-                    "orders_count": product.get("orders_count", 0),
-                    "orders_value": product.get("orders_value", 0),
-                    "transit_count": product.get("transit_count", 0),
-                    "transit_value": product.get("transit_value", 0),
-                    "delivered_count": product.get("delivered_count", 0),
-                    "delivered_value": product.get("delivered_value", 0),
-                    "profits": product.get("profits", 0),
-                    "image_url": product.get("image_url", "")  # Nova coluna para imagem
-                }
+                cursor.execute("""
+                    INSERT INTO dropi_metrics (
+                        store_id, date, date_start, date_end, product, provider, stock,
+                        orders_count, orders_value, transit_count, transit_value,
+                        delivered_count, delivered_value, profits, image_url
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    store_id, date_str, start_date_str, end_date_str, 
+                    product_name, product.get("provider", ""), product.get("stock", 0),
+                    product.get("orders_count", 0), product.get("orders_value", 0),
+                    product.get("transit_count", 0), product.get("transit_value", 0),
+                    product.get("delivered_count", 0), product.get("delivered_value", 0),
+                    product.get("profits", 0), product.get("image_url", "")
+                ))
             
-            # Usar a função execute_upsert do db_utils
-            from db_utils import execute_upsert
-            result = execute_upsert("dropi_metrics", data, ["store_id", "date", "product"])
-            if result:
-                inserted_count += 1
-                logger.info(f"Inserido/atualizado produto: {product_name}")
+            # Log the values for debugging
+            logger.info(f"Salvando produto: {product_name}")
+            logger.info(f"  Image URL: {product.get('image_url', '')}")
             
-        except Exception as insert_error:
-            success = False
-            logger.error(f"Erro ao inserir produto '{product_name}': {str(insert_error)}")
+            conn.commit()
+            saved_count += 1
+            cursor.close()
+            conn.close()
+        except Exception as e:
+            logger.error(f"Erro ao salvar produto {product_name}: {str(e)}")
+            if conn:
+                try:
+                    conn.rollback()
+                    conn.close()
+                except:
+                    pass
     
-    # Registrar resultado final
-    if inserted_count > 0:
-        logger.info(f"Transação concluída: {inserted_count} de {len(product_names)} produtos salvos")
-        return True
-    else:
-        logger.error("Nenhum produto foi salvo no banco de dados")
-        return False
+    logger.info(f"Total de {saved_count} produtos salvos com sucesso de {len(product_names)}")
+    return saved_count > 0
 
 # === FUNÇÕES PARA O LAYOUT MELHORADO ===
 
@@ -2134,9 +2118,10 @@ def display_effectiveness_table(store_id, start_date_str, end_date_str):
     
     conn = get_db_connection()
     
-    # Get DroPi data for the specific date range
+    # Get DroPi data for the specific date range including image URLs
     dropi_query = """
-        SELECT product, SUM(orders_count) as orders_count, SUM(delivered_count) as delivered_count
+        SELECT product, SUM(orders_count) as orders_count, SUM(delivered_count) as delivered_count, 
+               MAX(image_url) as image_url
         FROM dropi_metrics 
         WHERE store_id = ? AND date_start = ? AND date_end = ?
         GROUP BY product
@@ -2149,7 +2134,7 @@ def display_effectiveness_table(store_id, start_date_str, end_date_str):
     cursor.execute(dropi_query, (store_id, start_date_str, end_date_str))
     
     # Converter resultados para DataFrame
-    columns = ["product", "orders_count", "delivered_count"]
+    columns = ["product", "orders_count", "delivered_count", "image_url"]
     dropi_data = pd.DataFrame(cursor.fetchall(), columns=columns)
     
     # Get saved general effectiveness values for ALL products
@@ -2195,10 +2180,19 @@ def display_effectiveness_table(store_id, start_date_str, end_date_str):
         else:
             st.info(f"Mostrando {len(dropi_data)} produtos para o período: {start_date_str} a {end_date_str}")
         
+        # Reordenar colunas para mostrar imagem primeiro
+        cols = dropi_data.columns.tolist()
+        # Reorganizar para ter image_url primeiro, depois product
+        cols.remove('image_url')
+        cols.remove('product')
+        new_cols = ['image_url', 'product'] + cols
+        dropi_data = dropi_data[new_cols]
+        
         # Create the editable dataframe with styling
         edited_df = st.data_editor(
             dropi_data,
             column_config={
+                "image_url": st.column_config.ImageColumn("Imagem", help="Imagem do produto"),
                 "product": "Produto",
                 "orders_count": st.column_config.NumberColumn("Pedidos"),
                 "delivered_count": st.column_config.NumberColumn("Entregues"),
@@ -2218,7 +2212,7 @@ def display_effectiveness_table(store_id, start_date_str, end_date_str):
                     disabled=False
                 )
             },
-            disabled=["product", "orders_count", "delivered_count", "effectiveness", "alerta"],
+            disabled=["image_url", "product", "orders_count", "delivered_count", "effectiveness", "alerta"],
             use_container_width=True,
             hide_index=True
         )
