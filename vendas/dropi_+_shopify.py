@@ -115,15 +115,15 @@ def init_db():
         )
     """)
     
-    # Verificar e adicionar colunas para DroPi
+    # Verificar e adicionar colunas para Dropi
     try:
         c.execute("SELECT dropi_url FROM stores LIMIT 1")
     except sqlite3.OperationalError:
-        st.info("Atualizando estrutura do banco de dados para DroPi...")
+        st.info("Atualizando estrutura do banco de dados para Dropi...")
         c.execute("ALTER TABLE stores ADD COLUMN dropi_url TEXT")
         c.execute("ALTER TABLE stores ADD COLUMN dropi_username TEXT")
         c.execute("ALTER TABLE stores ADD COLUMN dropi_password TEXT")
-        st.success("Banco de dados atualizado com sucesso para DroPi!")
+        st.success("Banco de dados atualizado com sucesso para Dropi!")
     
     # Verificar e adicionar colunas para moedas
     try:
@@ -134,7 +134,7 @@ def init_db():
         c.execute("ALTER TABLE stores ADD COLUMN currency_to TEXT DEFAULT 'BRL'")
         st.success("Banco de dados atualizado com sucesso para suporte a moedas!")
     
-    # Criar tabela para métricas da DroPi
+    # Criar tabela para métricas da Dropi
     c.execute("""
         CREATE TABLE IF NOT EXISTS dropi_metrics (
             store_id TEXT,
@@ -610,7 +610,7 @@ def get_url_categories(store_id, start_date_str, end_date_str):
     # Retornar as categorias que possuem URLs
     return list(categories.keys())
 
-# === FUNÇÕES PARA DroPi ===
+# === FUNÇÕES PARA Dropi ===
 
 def setup_selenium(headless=True):
     """Configure and initialize Selenium WebDriver for cloud environment."""
@@ -812,7 +812,7 @@ def login(driver, email, password, logger):
         return False
 
 def navigate_to_product_sold(driver, logger):
-    """Navigate to the Product Sold report in DroPi."""
+    """Navigate to the Product Sold report in Dropi."""
     try:
         # Esperar que a página carregue completamente após o login
         time.sleep(5)
@@ -892,7 +892,7 @@ def navigate_to_product_sold(driver, logger):
 def select_date_range(driver, start_date, end_date, logger):
     """Select a specific date range in the Product Sold report."""
     try:
-        # Formatação das datas para exibição no formato esperado pelo DroPi (DD/MM/YYYY)
+        # Formatação das datas para exibição no formato esperado pelo Dropi (DD/MM/YYYY)
         start_date_formatted = start_date.strftime("%d/%m/%Y")
         end_date_formatted = end_date.strftime("%d/%m/%Y")
         
@@ -1470,7 +1470,7 @@ def extract_product_data(driver, logger):
         return []
 
 def save_dropi_metrics_to_db(store_id, date_str, products_data, start_date_str=None, end_date_str=None):
-    """Save DroPi product metrics to the database with date interval support."""
+    """Save Dropi product metrics to the database with date interval support."""
     # Se as datas de início e fim não foram fornecidas, use a data de referência para ambas
     if not start_date_str:
         start_date_str = date_str
@@ -1649,9 +1649,8 @@ def display_sidebar_filters(store):
     
     # Seção Shopify
     with st.sidebar.expander("Filtros Shopify", expanded=True):
-        st.sidebar.markdown("### Dropi")
+        st.sidebar.markdown("### Shopify")
         # Filtro de Data
-        st.sidebar.markdown("#### Período")
         col1, col2 = st.sidebar.columns(2)
         with col1:
             start_date = st.date_input(
@@ -1678,8 +1677,8 @@ def display_sidebar_filters(store):
         # Botão para atualizar dados
         update_shopify = st.sidebar.button("Atualizar Dados Shopify", use_container_width=True)
     
-    # Seção DroPi
-    with st.sidebar.expander("Filtros DroPi", expanded=True):
+    # Seção Dropi
+    with st.sidebar.expander("Filtros Dropi", expanded=True):
         # Substituir as opções de período por seleção de data
         st.sidebar.markdown("### Dropi")
         dropi_col1, dropi_col2 = st.sidebar.columns(2)
@@ -1701,7 +1700,7 @@ def display_sidebar_filters(store):
             )
         
         # Botão para atualizar dados
-        update_dropi = st.sidebar.button("Atualizar Dados DroPi", use_container_width=True)
+        update_dropi = st.sidebar.button("Atualizar Dados Dropi", use_container_width=True)
     
     return {
         'shopify': {
@@ -1713,39 +1712,6 @@ def display_sidebar_filters(store):
         'dropi': {
             'start_date': dropi_start_date,
             'end_date': dropi_end_date,
-            'update_clicked': update_dropi
-        }
-    }
-    
-    # Seção DroPi
-    with st.sidebar.expander("Filtros DroPi", expanded=True):
-        # Opções de período
-        period_options = {
-            "today": "Hoje",
-            "last_7_days": "Últimos 7 dias",
-            "last_30_days": "Últimos 30 dias",
-            "last_90_days": "Últimos 90 dias"
-        }
-        
-        selected_period = st.sidebar.selectbox(
-            "Período",
-            list(period_options.keys()),
-            format_func=lambda x: period_options[x],
-            index=1  # Default to "Últimos 7 dias"
-        )
-        
-        # Botão para atualizar dados
-        update_dropi = st.sidebar.button("Atualizar Dados DroPi", use_container_width=True)
-    
-    return {
-        'shopify': {
-            'start_date': start_date,
-            'end_date': end_date,
-            'selected_category': selected_category,
-            'update_clicked': update_shopify
-        },
-        'dropi': {
-            'selected_period': selected_period,
             'update_clicked': update_dropi
         }
     }
@@ -1875,7 +1841,7 @@ def display_shopify_chart(data, selected_category):
                 st.altair_chart(chart, use_container_width=True)
 
 def display_dropi_data(store_id, start_date_str, end_date_str):
-    """Exibe os dados da DroPi em tabelas colapsáveis e gráficos para um intervalo específico de datas."""
+    """Exibe os dados da Dropi em tabelas colapsáveis e gráficos para um intervalo específico de datas."""
     conn = get_db_connection()
     
     # Consulta com filtro exato por intervalo de datas
@@ -1916,7 +1882,7 @@ def display_dropi_data(store_id, start_date_str, end_date_str):
             if col in data_df.columns:
                 data_df[col] = data_df[col] * exchange_rate
     
-    logger.info(f"Encontrados {len(data_df)} registros DroPi para o período {start_date_str} a {end_date_str}")
+    logger.info(f"Encontrados {len(data_df)} registros Dropi para o período {start_date_str} a {end_date_str}")
     
     if not data_df.empty:
         # Summary statistics
@@ -1946,14 +1912,8 @@ def display_dropi_data(store_id, start_date_str, end_date_str):
         else:
             period_text = f"Mostrando {len(data_df)} produtos para o período: {start_date_str} a {end_date_str} (Valores em {currency_to})"
         
-        with st.expander("Produtos DroPi", expanded=True):
+        with st.expander("Produtos Dropi", expanded=True):
             st.info(period_text)
-            
-            # Configuração de colunas melhorada:
-            # 1. Ocultar store_id
-            # 2. Remover a coluna 'date' (redundante)
-            # 3. Renomear date_start e date_end
-            # 4. Adicionar coluna de imagem
             
             # Primeiro, criar uma cópia do DataFrame sem a coluna 'date'
             display_df = data_df.drop(columns=['date'], errors='ignore')
@@ -1989,9 +1949,9 @@ def display_dropi_data(store_id, start_date_str, end_date_str):
         return data_df
     else:
         if start_date_str == end_date_str:
-            st.info(f"Não há dados disponíveis da DroPi para a data {start_date_str}.")
+            st.info(f"Não há dados disponíveis da Dropi para a data {start_date_str}.")
         else:
-            st.info(f"Não há dados disponíveis da DroPi para o período {start_date_str} a {end_date_str}.")
+            st.info(f"Não há dados disponíveis da Dropi para o período {start_date_str} a {end_date_str}.")
         return pd.DataFrame()
 
 def adapt_upsert_query(base_query, update_columns, key_columns):
@@ -2015,7 +1975,7 @@ def adapt_upsert_query(base_query, update_columns, key_columns):
                ", ".join([f"{col} = excluded.{col}" for col in update_columns])
 
 def display_dropi_chart(data):
-    """Exibe gráfico interativo para os dados DroPi com barras empilhadas por produto."""
+    """Exibe gráfico interativo para os dados Dropi com barras empilhadas por produto."""
     if not data.empty:
         # Preparar dados para gráfico
         chart_data = data[['product', 'orders_count', 'transit_count', 'delivered_count']].copy()
@@ -2023,7 +1983,7 @@ def display_dropi_chart(data):
         # Ordenar por número de pedidos para melhor visualização
         chart_data = chart_data.sort_values('orders_count', ascending=False)
         
-        with st.expander("Gráfico de Produtos DroPi", expanded=True):
+        with st.expander("Gráfico de Produtos Dropi", expanded=True):
             # Criar gráfico interativo usando Altair
             import altair as alt
             
@@ -2110,15 +2070,13 @@ def save_general_effectiveness(store_id, product, value):
     conn.close()
 
 def display_effectiveness_table(store_id, start_date_str, end_date_str):
-    """Display a table with effectiveness metrics based on DroPi data for a specific date range."""
-    st.markdown("## Tabela de Efetividade", unsafe_allow_html=True)
-    
+    """Display a table with effectiveness metrics based on Dropi data for a specific date range."""    
     # Debug info
     logger.info(f"Buscando dados de efetividade para store_id={store_id}, período: {start_date_str} a {end_date_str}")
     
     conn = get_db_connection()
     
-    # Get DroPi data for the specific date range including image URLs
+    # Get Dropi data for the specific date range including image URLs
     dropi_query = """
         SELECT product, SUM(orders_count) as orders_count, SUM(delivered_count) as delivered_count, 
                MAX(image_url) as image_url
@@ -2247,12 +2205,12 @@ def display_effectiveness_table(store_id, start_date_str, end_date_str):
             
     else:
         if start_date_str == end_date_str:
-            st.warning(f"Não há dados disponíveis da DroPi para a data {start_date_str}.")
+            st.warning(f"Não há dados disponíveis da Dropi para a data {start_date_str}.")
         else:
-            st.warning(f"Não há dados disponíveis da DroPi para o período {start_date_str} a {end_date_str}.")
+            st.warning(f"Não há dados disponíveis da Dropi para o período {start_date_str} a {end_date_str}.")
         
 def update_dropi_data_silent(store, start_date, end_date):
-    """Atualiza os dados da DroPi sem exibir feedback de progresso."""
+    """Atualiza os dados da Dropi sem exibir feedback de progresso."""
     # Configurar o driver Selenium
     driver = setup_selenium(headless=True)
     
@@ -2267,9 +2225,9 @@ def update_dropi_data_silent(store, start_date, end_date):
         # Data de referência é a mesma da final (mantido para compatibilidade)
         date_str = end_date_str
         
-        logger.info(f"Buscando dados DroPi para o período: {start_date_str} a {end_date_str}")
+        logger.info(f"Buscando dados Dropi para o período: {start_date_str} a {end_date_str}")
         
-        # Fazer login no DroPi
+        # Fazer login no Dropi
         success = login(driver, store["dropi_username"], store["dropi_password"], logger)
         
         if not success:
@@ -2318,7 +2276,7 @@ def update_dropi_data_silent(store, start_date, end_date):
         return True
             
     except Exception as e:
-        logger.error(f"Erro ao atualizar dados da DroPi: {str(e)}")
+        logger.error(f"Erro ao atualizar dados da Dropi: {str(e)}")
         try:
             driver.quit()
         except:
@@ -2377,8 +2335,8 @@ def store_dashboard(store):
                 st.success("Dados da Shopify atualizados com sucesso!")
 
     if dropi_filters['update_clicked']:
-        # Atualizar dados da DroPi sem mostrar o progresso
-        with st.spinner("Atualizando dados da DroPi..."):
+        # Atualizar dados da Dropi sem mostrar o progresso
+        with st.spinner("Atualizando dados da Dropi..."):
             success = update_dropi_data_silent(
                 store,
                 dropi_filters['start_date'],
@@ -2386,9 +2344,9 @@ def store_dashboard(store):
             )
     
         if success:
-            st.success("Dados da DroPi atualizados com sucesso!")
+            st.success("Dados da Dropi atualizados com sucesso!")
         else:
-            st.error("Erro ao atualizar dados da DroPi.")
+            st.error("Erro ao atualizar dados da Dropi.")
     
     # Criar duas colunas principais
     col_shopify, col_dropi = st.columns(2)
@@ -2419,7 +2377,7 @@ def store_dashboard(store):
             )
             filtered_data = filtered_data[mask]
         
-        # Exibir métricas resumidas (similar à imagem da DroPi)
+        # Exibir métricas resumidas (similar à imagem da Dropi)
         if not filtered_data.empty:
             # Calcular métricas
             total_orders = filtered_data["total_orders"].sum()
@@ -2474,7 +2432,7 @@ def store_dashboard(store):
 
     # ========== SEÇÃO DE EFETIVIDADE ==========
     st.markdown('<hr style="height:2px;border-width:0;color:gray;background-color:gray;margin-top:20px;margin-bottom:20px;">', unsafe_allow_html=True)
-    st.markdown('<h3 style="text-align: center; font-weight: normal;">Análise de Efetividade</h3>', unsafe_allow_html=True)
+    st.markdown('<h4 style="text-align: center; font-weight: normal;">Análise de Efetividade</h4>', unsafe_allow_html=True)
 
     # Exibir tabela de efetividade para o intervalo selecionado
     display_effectiveness_table(store["id"], dropi_start_date_str, dropi_end_date_str)
@@ -2500,5 +2458,5 @@ if selected_store:
     store_dashboard(selected_store)
 else:
     # Tela inicial quando nenhuma loja está selecionada
-    st.title("Bem-vindo ao Dashboard Shopify + DroPi")
+    st.title("Bem-vindo ao Dashboard Shopify + Dropi")
     st.write("Selecione uma loja no menu lateral ou cadastre uma nova para começar.")

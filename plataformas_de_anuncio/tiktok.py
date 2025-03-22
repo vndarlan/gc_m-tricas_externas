@@ -3,29 +3,12 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import altair as alt
 
-# Título da página
-st.title("TikTok")
-
 # Verificar se uma loja está selecionada na sessão
 if "selected_store" in st.session_state and st.session_state["selected_store"] is not None:
     loja = st.session_state["selected_store"]
     
     # Exibir informação da loja selecionada
-    st.header(f"Loja: {loja['name']}")
-    
-    # Container para futuras métricas
-    with st.container():
-        st.subheader("Métricas do TikTok")
-        st.info("As métricas detalhadas do TikTok serão implementadas em uma futura atualização.")
-        
-        # Placeholder para métricas
-        col1, col2 = st.columns(2)
-        with col1:
-            st.metric(label="Visualizações", value="--")
-            st.metric(label="Compartilhamentos", value="--")
-        with col2:
-            st.metric(label="Curtidas", value="--")
-            st.metric(label="Conversões", value="--")
+    st.header(f"Tiktok: {loja['name']}")
     
     # Separador
     st.divider()

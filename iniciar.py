@@ -45,7 +45,6 @@ st.markdown("""
         margin-bottom: 15px;
         color: #666;
         font-weight: 500;
-        border-top: 1px solid rgba(0, 0, 0, 0.1); /* Linha divisória acima */
         padding-top: 15px;
     }
     
@@ -276,7 +275,7 @@ def custom_sidebar():
         
         # 2. SELETOR DE LOJA
         stores = load_stores()
-        store_options = ["Selecione uma loja..."] + [store[1] for store in stores] + ["➕ Cadastrar Nova Loja"]
+        store_options = ["Selecione uma loja..."] + [store[1] for store in stores] + ["📥 Nova Loja"]
         
         # Verificar se já existe uma loja selecionada
         default_index = 0
@@ -339,16 +338,16 @@ def render_menu_items():
     """Renderiza os itens do menu com ícones similares aos da imagem."""
     # Menu items com seus ícones - mantendo os originais
     menu_items = [
-        {"id": "home", "icon": "📊", "text": "Visão Geral", "page": "principal/home.py"},
-        {"id": "dropi_shopify", "icon": "📋", "text": "Métricas de Produtos", "page": "vendas/dropi_+_shopify.py"},
-        {"id": "facebook", "icon": "💰", "text": "Facebook", "page": "plataformas_de_anuncio/facebook.py"},
-        {"id": "tiktok", "icon": "📊", "text": "TikTok", "page": "plataformas_de_anuncio/tiktok.py"},
-        {"id": "google", "icon": "📊", "text": "Google", "page": "plataformas_de_anuncio/google.py"},
+        {"id": "home", "icon": "🌐", "text": "Visão Geral", "page": "principal/home.py"},
+        {"id": "dropi_shopify", "icon": "📦", "text": "Métricas de Produtos", "page": "vendas/dropi_+_shopify.py"},
+        {"id": "facebook", "icon": "📢", "text": "Facebook", "page": "plataformas_de_anuncio/facebook.py"},
+        {"id": "tiktok", "icon": "📢", "text": "TikTok", "page": "plataformas_de_anuncio/tiktok.py"},
+        {"id": "google", "icon": "📢", "text": "Google", "page": "plataformas_de_anuncio/google.py"},
     ]
     
     # Adicionar item Admin para administradores
     if st.session_state.get("cargo") == "Administrador":
-        menu_items.append({"id": "admin", "icon": "⚙️", "text": "Configurações", "page": "administracao/admin.py"})
+        menu_items.append({"id": "admin", "icon": "🔒", "text": "ADM", "page": "administracao/admin.py"})
     
     # Render each menu item
     for item in menu_items:
@@ -367,19 +366,20 @@ def render_menu_items():
 def handle_store_selection(selected_option, stores):
     """Manipula a seleção da loja."""
     # Lógica para "Cadastrar Nova Loja"
-    if selected_option == "➕ Cadastrar Nova Loja":
+    if selected_option == "📥 Nova Loja":
         st.subheader("Cadastrar Nova Loja")
         
         # Campos para cadastro
+        st.markdown("#### Dados Shopi")
         store_name = st.text_input("Nome da Loja:")
-        shop_name = st.text_input("Nome da Loja Shopify (prefixo):")
+        shop_name = st.text_input("Prefixo da Loja Shopify:")
         access_token = st.text_input("Token de Acesso:", type="password")
         
         # DroPi fields
-        st.markdown("#### Dados DroPi")
-        dropi_url = st.text_input("URL DroPi:", value="https://app.dropi.mx/")
-        dropi_username = st.text_input("Email/Usuário DroPi:")
-        dropi_password = st.text_input("Senha DroPi:", type="password")
+        st.markdown("#### Dados Dropi")
+        dropi_url = st.text_input("URL:", value="")
+        dropi_username = st.text_input("Email/Usuário:")
+        dropi_password = st.text_input("Senha:", type="password")
         
         # Currency fields
         st.markdown("#### Configurações de Moeda")
