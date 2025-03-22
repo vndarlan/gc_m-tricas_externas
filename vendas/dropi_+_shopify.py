@@ -2111,6 +2111,34 @@ def display_effectiveness_table(store_id, start_date_str, end_date_str):
     
     conn.close()
     
+    # Estilo para tabelas com fundo branco, incluindo cabeçalhos
+    st.markdown("""
+    <style>
+    /* Tabelas e componentes relacionados com fundo branco */
+    .stDataFrame, .stDataEditor, .stTable, 
+    .stDataFrame table, .stDataEditor table, .stTable table {
+        background-color: white !important;
+    }
+    
+    /* Cabeçalhos com fundo branco */
+    .stDataFrame thead tr, .stDataEditor thead tr, .stTable thead tr,
+    .stDataFrame th, .stDataEditor th, .stTable th {
+        background-color: white !important;
+        color: black !important;
+    }
+    
+    /* Remover cores alternadas de linhas */
+    .stDataFrame tbody tr, .stDataEditor tbody tr, .stTable tbody tr {
+        background-color: white !important;
+    }
+    
+    /* Remover cores de fundo padrão de células */
+    .stDataFrame td, .stDataEditor td, .stTable td {
+        background-color: white !important;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+    
     # Process the data if we have any
     if not dropi_data.empty:
         # Calculate effectiveness
@@ -2127,28 +2155,40 @@ def display_effectiveness_table(store_id, start_date_str, end_date_str):
             how='left'
         )
         
-        # Adicionar coluna de alerta para baixa efetividade
-        dropi_data['alerta'] = dropi_data['effectiveness'].apply(
-            lambda x: "⚠️ BAIXA EFETIVIDADE" if x <= 40.0 else ""
-        )
-        
         # Informar data dos dados
         if start_date_str == end_date_str:
             st.info(f"Mostrando {len(dropi_data)} produtos para a data: {start_date_str}")
         else:
             st.info(f"Mostrando {len(dropi_data)} produtos para o período: {start_date_str} a {end_date_str}")
         
-        # Reordenar colunas para mostrar imagem primeiro
-        cols = dropi_data.columns.tolist()
-        # Reorganizar para ter image_url primeiro, depois product
-        cols.remove('image_url')
-        cols.remove('product')
-        new_cols = ['image_url', 'product'] + cols
-        dropi_data = dropi_data[new_cols]
+        # Função para aplicar cores de fundo por linha
+        def get_row_color(effectiveness):
+            if effectiveness <= 40.0:
+                return '#ffcccc'  # Vermelho claro
+            elif effectiveness < 60.0:
+                return '#ffff99'  # Amarelo claro
+            else:
+                return '#ccffcc'  # Verde claro
         
-        # Create the editable dataframe with styling
-        edited_df = st.data_editor(
-            dropi_data,
+        # Adicionar coluna com a cor para cada linha baseada na efetividade
+        dropi_data['_row_color'] = dropi_data['effectiveness'].apply(get_row_color)
+        
+        # Função para aplicar a formatação condicional em todas as células da linha
+        def highlight_rows(row):
+            color = row['_row_color']
+            return [f'background-color: {color}'] * len(row)
+        
+        # Preparar DataFrame para visualização
+        view_columns = ['image_url', 'product', 'orders_count', 'delivered_count', 
+                      'effectiveness', 'general_effectiveness', '_row_color']
+        view_df = dropi_data[view_columns].copy()
+        
+        # Aplicar estilo com cores
+        styled_view = view_df.style.apply(highlight_rows, axis=1)
+        
+        # Exibir tabela estilizada completa (não editável)
+        st.dataframe(
+            styled_view,
             column_config={
                 "image_url": st.column_config.ImageColumn("Imagem", help="Imagem do produto"),
                 "product": "Produto",
@@ -2159,24 +2199,46 @@ def display_effectiveness_table(store_id, start_date_str, end_date_str):
                     format="%.1f%%",
                     help="Calculado como (Entregues / Pedidos) * 100"
                 ),
-                "alerta": st.column_config.TextColumn(
-                    "Alerta",
-                    help="Produtos com efetividade ≤ 40% recebem alerta"
-                ),
                 "general_effectiveness": st.column_config.NumberColumn(
                     "Efetividade Geral (%)",
                     format="%.1f%%",
-                    help="Valor definido manualmente",
-                    disabled=False
-                )
+                    help="Valor definido manualmente"
+                ),
+                "_row_color": None  # Ocultar coluna de cor
             },
-            disabled=["image_url", "product", "orders_count", "delivered_count", "effectiveness", "alerta"],
-            use_container_width=True,
-            hide_index=True
+            hide_index=True,
+            use_container_width=True
         )
         
+        # Seção para edição da Efetividade Geral - Minimizada por padrão
+        with st.expander("Editar Efetividade Geral", expanded=False):
+            # Preparar DataFrame para edição
+            edit_columns = ['product', 'general_effectiveness', '_row_color']
+            edit_df = dropi_data[edit_columns].copy()
+            
+            # Aplicar o mesmo estilo de cores à tabela editável
+            styled_edit = edit_df.style.apply(highlight_rows, axis=1)
+            
+            # Exibir tabela editável com cores por efetividade
+            edited_df = st.data_editor(
+                edit_df,
+                column_config={
+                    "product": "Produto",
+                    "general_effectiveness": st.column_config.NumberColumn(
+                        "Efetividade Geral (%)",
+                        format="%.1f%%",
+                        help="Valor definido manualmente"
+                    ),
+                    "_row_color": None  # Ocultar coluna de cor
+                },
+                disabled=["product"],
+                hide_index=True,
+                use_container_width=True,
+                key="edit_effectiveness_table"
+            )
+        
         # Check if any general_effectiveness values have been edited
-        if not edited_df.equals(dropi_data):
+        if not edited_df.equals(edit_df):
             # Find rows where general_effectiveness has changed
             for idx, row in edited_df.iterrows():
                 product = row['product']
@@ -2184,7 +2246,7 @@ def display_effectiveness_table(store_id, start_date_str, end_date_str):
                 
                 # Get the old value (if exists)
                 try:
-                    old_value = dropi_data.loc[dropi_data['product'] == product, 'general_effectiveness'].iloc[0]
+                    old_value = edit_df.loc[edit_df['product'] == product, 'general_effectiveness'].iloc[0]
                     # Save if changed
                     if pd.notna(new_value) and (pd.isna(old_value) or new_value != old_value):
                         save_effectiveness(store_id, product, new_value)
@@ -2195,13 +2257,13 @@ def display_effectiveness_table(store_id, start_date_str, end_date_str):
                         save_effectiveness(store_id, product, new_value)
                         logger.info(f"Salvou nova efetividade geral para '{product}': {new_value}")
         
-        # Add a button to save all changes at once
-        if st.button("Salvar Todas as Alterações", key="save_effectiveness"):
-            # Save all values
-            for idx, row in edited_df.iterrows():
-                if pd.notna(row['general_effectiveness']):
-                    save_effectiveness(store_id, row['product'], row['general_effectiveness'])
-            st.success("Valores de efetividade geral salvos com sucesso!")
+            # Add a button to save all changes at once
+            if st.button("Salvar Todas as Alterações", key="save_effectiveness"):
+                # Save all values
+                for idx, row in edited_df.iterrows():
+                    if pd.notna(row['general_effectiveness']):
+                        save_effectiveness(store_id, row['product'], row['general_effectiveness'])
+                st.success("Valores de efetividade geral salvos com sucesso!")
             
     else:
         if start_date_str == end_date_str:
@@ -2315,9 +2377,6 @@ def store_dashboard(store):
     # ========== SEÇÃO SHOPIFY (LINHA INTEIRA) ==========
     # Logo do Shopify centralizado
     st.markdown('<div style="display: flex; justify-content: center; margin-bottom: 20px;"><img src="https://cdn.shopify.com/shopifycloud/brochure/assets/brand-assets/shopify-logo-primary-logo-456baa801ee66a0a435671082365958316831c9960c480451dd0330bcdae304f.svg" width="150"></div>', unsafe_allow_html=True)
-    
-    # Todos os filtros na mesma linha horizontal
-    st.markdown("<h5 style='text-align: center; color: gray;'>Selecione o período</h5>", unsafe_allow_html=True)
     
     # Layout fixo em colunas para corresponder à imagem
     de_col, ate_col, plataforma_col, botao_col = st.columns([1, 1, 1.5, 1.5])
@@ -2481,10 +2540,7 @@ def store_dashboard(store):
 
     # ========== SEÇÃO DROPI (LINHA INTEIRA) ==========
     # Logo do Dropi centralizado
-    st.markdown('<div style="display: flex; justify-content: center; margin-bottom: 20px;"><img src="https://app.dropi.mx/assets/images/logo-dark.svg" width="150"></div>', unsafe_allow_html=True)
-    
-    # Todos os filtros na mesma linha horizontal
-    st.markdown("<h5 style='text-align: center; color: gray;'>Selecione o período</h5>", unsafe_allow_html=True)
+    st.markdown('<div style="display: flex; justify-content: center; margin-bottom: 20px;"><img src="https://d39ru7awumhhs2.cloudfront.net/mexico/brands/1/logo/169517993216951799321rMLQGRSO8qfZSk4hhXNZPjPxX601y0WjAovHOll.png" width="150"></div>', unsafe_allow_html=True)
     
     # Layout fixo em colunas para corresponder à imagem
     dropi_de_col, dropi_ate_col, dropi_botao_col = st.columns([1, 1, 3])
