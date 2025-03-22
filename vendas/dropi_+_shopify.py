@@ -2299,21 +2299,102 @@ def store_dashboard(store):
     # Título principal
     st.markdown(f'<h1 style="text-align: center; color: white;">Dashboard {store["name"]}</h1>', unsafe_allow_html=True)
     
-    # Exibir filtros na barra lateral e obter valores selecionados
-    filters = display_sidebar_filters(store)
+    # Definir valores padrão para datas - no início da função para garantir disponibilidade
+    default_start_date = datetime.today() - timedelta(days=7)
+    default_end_date = datetime.today()
+    update_shopify = False
+    update_dropi = False
     
-    # Processar valores dos filtros
-    shopify_filters = filters['shopify']
-    dropi_filters = filters['dropi']
+    # IMPORTANTE: Definir todas as variáveis de data aqui no início
+    # Isso evitará que dropi_start_date_str seja acessada antes de ser definida
+    dropi_start_date = default_start_date
+    dropi_end_date = default_end_date
+    dropi_start_date_str = dropi_start_date.strftime("%Y-%m-%d")
+    dropi_end_date_str = dropi_end_date.strftime("%Y-%m-%d")
     
-    start_date = shopify_filters['start_date']
-    end_date = shopify_filters['end_date']
-    selected_category = shopify_filters['selected_category']
+    # ========== SEÇÃO SHOPIFY (LINHA INTEIRA) ==========
+    # Logo do Shopify centralizado
+    st.markdown('<div style="display: flex; justify-content: center; margin-bottom: 20px;"><img src="https://cdn.shopify.com/shopifycloud/brochure/assets/brand-assets/shopify-logo-primary-logo-456baa801ee66a0a435671082365958316831c9960c480451dd0330bcdae304f.svg" width="150"></div>', unsafe_allow_html=True)
+    
+    # Todos os filtros na mesma linha horizontal
+    st.markdown("<h5 style='text-align: center; color: gray;'>Selecione o período</h5>", unsafe_allow_html=True)
+    
+    # Layout fixo em colunas para corresponder à imagem
+    de_col, ate_col, plataforma_col, botao_col = st.columns([1, 1, 1.5, 1.5])
+    
+    # Gerar chaves únicas adicionando o store_id às chaves
+    shopify_start_key = f"shopify_start_{store['id']}"
+    shopify_end_key = f"shopify_end_{store['id']}"
+    
+    # Data inicial
+    with de_col:
+        st.write("De:")
+        start_date = st.date_input(
+            "",
+            default_start_date,
+            key=shopify_start_key,
+            format="DD/MM/YYYY",
+            label_visibility="collapsed"
+        )
+    
+    # Data final
+    with ate_col:
+        st.write("Até:")
+        end_date = st.date_input(
+            "",
+            default_end_date,
+            key=shopify_end_key,
+            format="DD/MM/YYYY",
+            label_visibility="collapsed"
+        )
+    
+    # Strings de data formatadas para uso nas consultas
     start_date_str = start_date.strftime("%Y-%m-%d")
     end_date_str = end_date.strftime("%Y-%m-%d")
     
+    # Obter categorias de URL com base nas datas selecionadas
+    url_categories = get_url_categories(store["id"], start_date_str, end_date_str)
+    
+    # Filtro de plataforma de anúncio
+    with plataforma_col:
+        st.write("Plataforma de Anúncio:")
+        # Verificar se temos categorias
+        shopify_cat_key = f"shopify_cat_{store['id']}"
+        if url_categories and len(url_categories) > 0:
+            category_options = ["Todos"] + url_categories
+            selected_category = st.selectbox(
+                "",
+                options=category_options,
+                index=0,
+                key=shopify_cat_key,
+                label_visibility="collapsed"
+            )
+        else:
+            selected_category = "Todos"
+            st.selectbox(
+                "",
+                options=["Todos"],
+                key=shopify_cat_key,
+                label_visibility="collapsed"
+            )
+    
+    # Botão de atualização
+    with botao_col:
+        st.write("&nbsp;", unsafe_allow_html=True)  # Espaçamento para alinhar com outros elementos
+        # Adicionar botão de atualização
+        shopify_update_key = f"shopify_update_{store['id']}"
+        update_shopify_direct = st.button(
+            "Atualizar Dados Shopify", 
+            key=shopify_update_key,
+            use_container_width=True
+        )
+        
+    # Flag para atualizar dados
+    if update_shopify_direct:
+        update_shopify = True
+
     # Atualizar dados se o botão foi clicado
-    if shopify_filters['update_clicked']:
+    if update_shopify:
         # Atualizar dados da Shopify
         with st.spinner("Atualizando dados da Shopify..."):
             product_urls, product_images = get_shopify_products(URL, HEADERS)
@@ -2333,37 +2414,18 @@ def store_dashboard(store):
                 save_metrics_to_db(store["id"], start_date_str, product_total, product_processed, product_delivered, product_url_map, product_value, product_image_map)
                 
                 st.success("Dados da Shopify atualizados com sucesso!")
+                
+    # Recuperar dados atualizados para o intervalo de datas
+    conn = get_db_connection()
+    query = f"""
+        SELECT * FROM product_metrics 
+        WHERE store_id = '{store["id"]}' AND date BETWEEN '{start_date_str}' AND '{end_date_str}'
+    """
+    shopify_data = pd.read_sql_query(query, conn)
+    conn.close()
 
-    if dropi_filters['update_clicked']:
-        # Atualizar dados da Dropi sem mostrar o progresso
-        with st.spinner("Atualizando dados da Dropi..."):
-            success = update_dropi_data_silent(
-                store,
-                dropi_filters['start_date'],
-                dropi_filters['end_date']
-            )
-    
-        if success:
-            st.success("Dados da Dropi atualizados com sucesso!")
-        else:
-            st.error("Erro ao atualizar dados da Dropi.")
-    
-    # Criar duas colunas principais
-    col_shopify, col_dropi = st.columns(2)
-    
-    # ========== COLUNA SHOPIFY ==========
-    with col_shopify:
-        st.markdown('<h2 style="text-align: center; font-weight: bold;">SHOPIFY</h2>', unsafe_allow_html=True)
-        
-        # Recuperar dados atualizados para o intervalo de datas
-        conn = get_db_connection()
-        query = f"""
-            SELECT * FROM product_metrics 
-            WHERE store_id = '{store["id"]}' AND date BETWEEN '{start_date_str}' AND '{end_date_str}'
-        """
-        shopify_data = pd.read_sql_query(query, conn)
-        conn.close()
-        
+    # Exibir métricas resumidas (similar à imagem da Dropi)
+    if not shopify_data.empty:
         # Aplicar filtro de categoria antes de calcular métricas
         filtered_data = shopify_data
         if selected_category != "Todos" and 'product_url' in shopify_data.columns:
@@ -2377,67 +2439,283 @@ def store_dashboard(store):
             )
             filtered_data = filtered_data[mask]
         
-        # Exibir métricas resumidas (similar à imagem da Dropi)
-        if not filtered_data.empty:
-            # Calcular métricas
-            total_orders = filtered_data["total_orders"].sum()
-            
-            # Verificar se a coluna total_value existe
-            total_value = 0
-            if 'total_value' in filtered_data.columns:
-                total_value = filtered_data["total_value"].sum()
-            
-            # Display metrics in two columns
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                st.metric("Pedidos", f"{total_orders}")
-                
-            with col2:
-                # Formatação de moeda adequada com separadores de milhar
-                formatted_value = "${:,.2f}".format(total_value)
-                st.metric("Valor Total", formatted_value)
-        else:
-            # Exibir zeros se não houver dados para o filtro selecionado
-            col1, col2 = st.columns(2)
-            with col1:
-                st.metric("Pedidos", "0")
-            with col2:
-                st.metric("Valor Total", "$0.00")
+        # Calcular métricas
+        total_orders = filtered_data["total_orders"].sum()
         
-        # Exibir dados em tabelas colapsáveis
+        # Verificar se a coluna total_value existe
+        total_value = 0
+        if 'total_value' in filtered_data.columns:
+            total_value = filtered_data["total_value"].sum()
+        
+        # Display metrics in two columns
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.metric("Pedidos", f"{total_orders}")
+            
+        with col2:
+            # Formatação de moeda adequada com separadores de milhar
+            formatted_value = "${:,.2f}".format(total_value)
+            st.metric("Valor Total", formatted_value)
+    else:
+        # Exibir zeros se não houver dados para o filtro selecionado
+        col1, col2 = st.columns(2)
+        with col1:
+            st.metric("Pedidos", "0")
+        with col2:
+            st.metric("Valor Total", "$0.00")
+
+    # Crie colunas para a tabela e o gráfico lado a lado
+    shopify_col1, shopify_col2 = st.columns(2)
+
+    with shopify_col1:
+        # Tabela de produtos
         display_shopify_data(shopify_data, selected_category)
-        
-        # Exibir gráficos
+
+    with shopify_col2:
+        # Gráfico
         display_shopify_chart(shopify_data, selected_category)
 
-    # ========== COLUNA DROPI ==========
-    with col_dropi:
-        st.markdown('<h2 style="text-align: center; font-weight: bold;">DROPI</h2>', unsafe_allow_html=True)
-
-        # Usar o intervalo completo de datas selecionado
-        dropi_start_date = dropi_filters['start_date']
-        dropi_end_date = dropi_filters['end_date']
-    
-        dropi_start_date_str = dropi_start_date.strftime("%Y-%m-%d")
-        dropi_end_date_str = dropi_end_date.strftime("%Y-%m-%d")
-
-        # Exibir dados em tabelas colapsáveis e obter os dados para os gráficos
-        # Agora usando o intervalo completo de datas
-        dropi_data = display_dropi_data(store["id"], dropi_start_date_str, dropi_end_date_str)
-
-        # Exibir gráficos
-        if not dropi_data.empty:
-            display_dropi_chart(dropi_data)
-
-    # ========== SEÇÃO DE EFETIVIDADE ==========
+    # Linha divisória entre as seções
     st.markdown('<hr style="height:2px;border-width:0;color:gray;background-color:gray;margin-top:20px;margin-bottom:20px;">', unsafe_allow_html=True)
-    st.markdown('<h4 style="text-align: center; font-weight: normal;">Análise de Efetividade</h4>', unsafe_allow_html=True)
+
+    # ========== SEÇÃO DROPI (LINHA INTEIRA) ==========
+    # Logo do Dropi centralizado
+    st.markdown('<div style="display: flex; justify-content: center; margin-bottom: 20px;"><img src="https://app.dropi.mx/assets/images/logo-dark.svg" width="150"></div>', unsafe_allow_html=True)
+    
+    # Todos os filtros na mesma linha horizontal
+    st.markdown("<h5 style='text-align: center; color: gray;'>Selecione o período</h5>", unsafe_allow_html=True)
+    
+    # Layout fixo em colunas para corresponder à imagem
+    dropi_de_col, dropi_ate_col, dropi_botao_col = st.columns([1, 1, 3])
+    
+    # Gerar chaves únicas adicionando o store_id às chaves
+    dropi_start_key = f"dropi_start_{store['id']}"
+    dropi_end_key = f"dropi_end_{store['id']}"
+    
+    # Data inicial
+    with dropi_de_col:
+        st.write("De:")
+        dropi_start_date = st.date_input(
+            "",
+            default_start_date,
+            key=dropi_start_key,
+            format="DD/MM/YYYY",
+            label_visibility="collapsed"
+        )
+    
+    # Data final
+    with dropi_ate_col:
+        st.write("Até:")
+        dropi_end_date = st.date_input(
+            "",
+            default_end_date,
+            key=dropi_end_key,
+            format="DD/MM/YYYY",
+            label_visibility="collapsed"
+        )
+    
+    # Botão de atualização
+    with dropi_botao_col:
+        st.write("&nbsp;", unsafe_allow_html=True)  # Espaçamento para alinhar com outros elementos
+        # Adicionar botão de atualização com chave única
+        dropi_update_key = f"dropi_update_{store['id']}"
+        update_dropi_direct = st.button(
+            "Atualizar Dados Dropi", 
+            key=dropi_update_key,
+            use_container_width=True
+        )
+        
+    # Atualizar as strings de data após os inputs terem sido processados
+    dropi_start_date_str = dropi_start_date.strftime("%Y-%m-%d")
+    dropi_end_date_str = dropi_end_date.strftime("%Y-%m-%d")
+    
+    # Flag para atualizar dados
+    if update_dropi_direct:
+        update_dropi = True
+
+    # Atualizar dados da Dropi se o botão foi clicado
+    if update_dropi:
+        # Atualizar dados da Dropi
+        with st.spinner("Atualizando dados da Dropi..."):
+            success = update_dropi_data_silent(
+                store,
+                dropi_start_date,
+                dropi_end_date
+            )
+    
+        if success:
+            st.success("Dados da Dropi atualizados com sucesso!")
+        else:
+            st.error("Erro ao atualizar dados da Dropi.")
+
+    # Buscar dados da Dropi
+    conn = get_db_connection()
+    query = """
+        SELECT * FROM dropi_metrics 
+        WHERE store_id = ? 
+          AND date_start = ? 
+          AND date_end = ?
+    """
+
+    if is_railway_environment():
+        query = query.replace("?", "%s")
+
+    cursor = conn.cursor()
+    cursor.execute(query, (store["id"], dropi_start_date_str, dropi_end_date_str))
+
+    # Converter resultados para DataFrame
+    columns = [desc[0] for desc in cursor.description]
+    data = cursor.fetchall()
+
+    # Obter informações da moeda da loja
+    currency_info = get_store_currency(store["id"])
+    currency_from = currency_info["from"]
+    currency_to = currency_info["to"]
+
+    # Converter para DataFrame
+    dropi_data = pd.DataFrame(data, columns=columns)
+    conn.close()
+
+    # Obter taxa de conversão
+    exchange_rate = get_exchange_rate(currency_from, currency_to)
+
+    # Converter valores monetários
+    if not dropi_data.empty:
+        for col in ['orders_value', 'transit_value', 'delivered_value', 'profits']:
+            if col in dropi_data.columns:
+                dropi_data[col] = dropi_data[col] * exchange_rate
+
+        # Summary statistics
+        total_orders = dropi_data["orders_count"].sum()
+        total_orders_value = dropi_data["orders_value"].sum()
+        total_transit = dropi_data["transit_count"].sum()
+        total_transit_value = dropi_data["transit_value"].sum()
+        total_delivered = dropi_data["delivered_count"].sum()
+        total_delivered_value = dropi_data["delivered_value"].sum()
+        total_profits = dropi_data["profits"].sum()
+        
+        # Display metrics in three columns
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            st.metric("Pedidos", f"{total_orders}", f"{currency_to} {total_orders_value:,.2f}")
+            
+        with col2:
+            st.metric("Em Trânsito", f"{total_transit}", f"{currency_to} {total_transit_value:,.2f}")
+            
+        with col3:
+            st.metric("Entregues", f"{total_delivered}", f"{currency_to} {total_delivered_value:,.2f}")
+
+    # Crie colunas para a tabela e o gráfico lado a lado
+    dropi_col1, dropi_col2 = st.columns(2)
+
+    with dropi_col1:
+        # Exibir tabela de produtos Dropi
+        if not dropi_data.empty:
+            # Exibir tabela com todos os dados e uma mensagem de confirmação do período
+            if dropi_start_date_str == dropi_end_date_str:
+                period_text = f"Mostrando {len(dropi_data)} produtos para a data: {dropi_start_date_str} (Valores em {currency_to})"
+            else:
+                period_text = f"Mostrando {len(dropi_data)} produtos para o período: {dropi_start_date_str} a {dropi_end_date_str} (Valores em {currency_to})"
+            
+            st.subheader("Produtos Dropi")
+            st.info(period_text)
+            
+            # Primeiro, criar uma cópia do DataFrame sem a coluna 'date'
+            display_df = dropi_data.drop(columns=['date'], errors='ignore')
+            
+            # Reorganizar colunas para mostrar imagem primeiro se existir
+            if 'image_url' in display_df.columns:
+                cols = display_df.columns.tolist()
+                cols.remove('image_url')
+                cols = ['image_url'] + cols
+                display_df = display_df[cols]
+            
+            st.dataframe(
+                display_df,
+                column_config={
+                    "store_id": None,  # Ocultar esta coluna
+                    "image_url": st.column_config.ImageColumn("Imagem", help="Imagem do produto"),
+                    "date_start": st.column_config.TextColumn("Data Inicial"),
+                    "date_end": st.column_config.TextColumn("Data Final"),
+                    "product": "Produto",
+                    "provider": "Fornecedor",
+                    "stock": "Estoque",
+                    "orders_count": "Pedidos",
+                    "orders_value": st.column_config.NumberColumn(f"Valor Pedidos ({currency_to})", format="%.2f"),
+                    "transit_count": "Em Trânsito",
+                    "transit_value": st.column_config.NumberColumn(f"Valor Trânsito ({currency_to})", format="%.2f"),
+                    "delivered_count": "Entregues",
+                    "delivered_value": st.column_config.NumberColumn(f"Valor Entregues ({currency_to})", format="%.2f"),
+                    "profits": st.column_config.NumberColumn(f"Lucros ({currency_to})", format="%.2f")
+                },
+                use_container_width=True
+            )
+        else:
+            if dropi_start_date_str == dropi_end_date_str:
+                st.info(f"Não há dados disponíveis da Dropi para a data {dropi_start_date_str}.")
+            else:
+                st.info(f"Não há dados disponíveis da Dropi para o período {dropi_start_date_str} a {dropi_end_date_str}.")
+
+    with dropi_col2:
+        # Exibir gráfico interativo para os dados Dropi
+        if not dropi_data.empty:
+            # Preparar dados para gráfico
+            chart_data = dropi_data[['product', 'orders_count', 'transit_count', 'delivered_count']].copy()
+            
+            # Ordenar por número de pedidos para melhor visualização
+            chart_data = chart_data.sort_values('orders_count', ascending=False)
+            
+            st.subheader("Gráfico de Produtos Dropi")
+            # Criar gráfico interativo usando Altair
+            import altair as alt
+            
+            # Transformar os dados para formato long, adequado para gráficos de barras empilhadas
+            chart_data_long = pd.melt(
+                chart_data,
+                id_vars=['product'],
+                value_vars=['orders_count', 'transit_count', 'delivered_count'],
+                var_name='status',
+                value_name='quantidade'
+            )
+            
+            # Mapear os nomes das colunas para rótulos mais amigáveis
+            status_mapping = {
+                'orders_count': 'Pedidos',
+                'transit_count': 'Em Trânsito',
+                'delivered_count': 'Entregues'
+            }
+            
+            chart_data_long['status'] = chart_data_long['status'].map(status_mapping)
+            
+            # Definir ordem específica para a legenda
+            status_order = ['Pedidos', 'Em Trânsito', 'Entregues']
+            
+            # Criar gráfico de barras empilhadas
+            chart = alt.Chart(chart_data_long).mark_bar().encode(
+                x=alt.X('product:N', title='Produto', sort='-y'),
+                y=alt.Y('quantidade:Q', title='Quantidade', stack='zero'),
+                color=alt.Color('status:N', 
+                               scale=alt.Scale(domain=status_order, 
+                                               range=['#4B9CD3', '#FFD700', '#50C878']),
+                               title='Status'),
+                order=alt.Order('status:N', sort='ascending'),
+                tooltip=['product', 'status', 'quantidade']
+            ).properties(
+                width='container',
+                height=500,
+                title='Status por Produto'
+            ).interactive()
+            
+            st.altair_chart(chart, use_container_width=True)
+
+    # ========== SEÇÃO DE EFETIVIDADE (Parte de Dropi) ==========
+    st.markdown('<hr style="height:2px;border-width:0;color:gray;background-color:gray;margin-top:20px;margin-bottom:20px;">', unsafe_allow_html=True)
+    st.markdown('<h4 style="text-align: center;">ANÁLISE DE EFETIVIDADE</h4>', unsafe_allow_html=True)
 
     # Exibir tabela de efetividade para o intervalo selecionado
     display_effectiveness_table(store["id"], dropi_start_date_str, dropi_end_date_str)
-
-# Main code execution starts here
 
 # Inicializar banco de dados
 init_db()
