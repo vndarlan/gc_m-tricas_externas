@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 # Configuração global da página
 st.set_page_config(
     layout="wide", 
-    page_title="GC Métricas Externas", 
+    page_title="Chegou Insights", 
     page_icon=":chart_with_upwards_trend:"
 )
 
@@ -122,7 +122,7 @@ def login_page():
         # Card de login com estilo simples
         with st.container():
             # Conteúdo do card
-            st.markdown(f'<h1 style="color:#0E9E6D; font-size:2rem;">tracky</h1>', unsafe_allow_html=True)
+            st.markdown(f'<h1 style="color:#0E9E6D; font-size:2rem;">Chegou Insights</h1>', unsafe_allow_html=True)
             st.markdown(f'<h2>Bem vindo de volta!</h2>', unsafe_allow_html=True)
             
             # Formulário
@@ -187,7 +187,7 @@ def custom_sidebar():
     
     with st.sidebar:
         # 1. TÍTULO TRACKY
-        st.markdown('<div class="brand-title">tracky</div>', unsafe_allow_html=True)
+        st.markdown('<div class="brand-title">Chegou Insights</div>', unsafe_allow_html=True)
         
         # 2. SELETOR DE LOJA
         stores = load_stores()
