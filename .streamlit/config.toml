@@ -1,8 +1,8 @@
 [theme]
 # Cores primárias
 primaryColor = "#00774D"  # Verde Tracky para botões e elementos interativos
-backgroundColor = "#EBF3EF"  # Fundo geral muito claro
-secondaryBackgroundColor = "#ffffff"  # Fundo de cards e containers
+backgroundColor = "#ffffff"  # Fundo geral muito claro
+secondaryBackgroundColor = "#EBF3EF"  # Fundo de cards e containers
 textColor = "#333333"  # Cor do texto principal
 
 # Fonte
@@ -16,3 +16,11 @@ gatherUsageStats = false
 
 [global]
 showWarningOnDirectExecution = false
+
+
+# [theme]
+# Cores primárias
+# primaryColor = "#00774D"  # Verde Tracky para botões e elementos interativos
+# backgroundColor = "#EBF3EF"  # Fundo geral muito claro
+# secondaryBackgroundColor = "#ffffff"  # Fundo de cards e containers
+# textColor = "#333333"  # Cor do texto principal
