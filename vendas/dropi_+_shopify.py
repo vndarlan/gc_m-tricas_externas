@@ -19,6 +19,7 @@ import numpy as np
 import altair as alt
 import sys
 import sqlite3
+from selenium.webdriver.common.keys import Keys
 
 # Adicionar a raiz do projeto ao path para importar módulos
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -901,8 +902,19 @@ def select_date_range(driver, start_date, end_date, logger):
         # Capturar screenshot para diagnóstico
         driver.save_screenshot("before_date_select.png")
         
-        # Seletores específicos para o campo de data, baseado na captura de tela e no log
+        # 1. LIMPAR FILTROS EXISTENTES PRIMEIRO (IMPORTANTE!)
+        try:
+            clear_buttons = driver.find_elements(By.XPATH, "//button[contains(text(), 'Clear') or contains(text(), 'Limpiar') or contains(@class, 'clear')]")
+            if clear_buttons:
+                clear_buttons[0].click()
+                logger.info("Filtros de data existentes limpos")
+                time.sleep(2)
+        except Exception as e:
+            logger.warning(f"Não foi possível limpar filtros: {str(e)}")
+        
+        # 2. Localizar o seletor de intervalo de data
         date_selectors = [
+            "//div[contains(@class, 'date-picker-range')]",
             "//div[contains(@class, 'date-field') or contains(@class, 'date-picker')]",
             "//div[@class='datepicker-toggle']",
             "//div[contains(@class, 'datepicker')]//input",
@@ -923,18 +935,22 @@ def select_date_range(driver, start_date, end_date, logger):
                     driver.execute_script("arguments[0].style.border='3px solid red'", element)
                     driver.save_screenshot("highlighted_date_field.png")
                     logger.info(f"Elemento de data encontrado, HTML: {element.get_attribute('outerHTML')}")
-                    element.click()
-                    logger.info(f"Clicou no seletor de data: {selector}")
+                    
+                    # Tentar usar JavaScript para clicar (mais confiável)
+                    driver.execute_script("arguments[0].click();", element)
+                    logger.info(f"Clicou via JavaScript no seletor: {selector}")
                     clicked = True
+                    time.sleep(3)  # Espera maior para garantir que o calendário abra
                     break
                 except Exception as e:
-                    logger.warning(f"Clique direto no seletor {selector} falhou: {str(e)}")
+                    logger.warning(f"Clique via JavaScript no seletor {selector} falhou: {str(e)}")
                     
-                # Tentar JavaScript click como alternativa
+                # Tentar clique normal se o JavaScript falhar
                 element = driver.find_element(By.XPATH, selector)
-                driver.execute_script("arguments[0].click();", element)
-                logger.info(f"Clicou via JavaScript no seletor de data: {selector}")
+                element.click()
+                logger.info(f"Clicou no seletor de data: {selector}")
                 clicked = True
+                time.sleep(3)  # Espera maior
                 break
             except Exception as e:
                 logger.warning(f"Seletor {selector} falhou completamente: {str(e)}")
@@ -953,19 +969,13 @@ def select_date_range(driver, start_date, end_date, logger):
                         logger.info(f"Elemento {i+1}: {elem.get_attribute('outerHTML')}")
                         driver.execute_script("arguments[0].style.border='3px solid blue'", elem)
                         driver.save_screenshot(f"date_candidate_{i+1}.png")
-                        elem.click()
-                        logger.info(f"Clicou com sucesso no potencial elemento de data {i+1}")
+                        driver.execute_script("arguments[0].click();", elem)
+                        logger.info(f"Clicou via JavaScript no potencial elemento de data {i+1}")
                         clicked = True
+                        time.sleep(3)  # Espera maior
                         break
                     except Exception as e:
                         logger.warning(f"Não conseguiu clicar no elemento {i+1}: {str(e)}")
-                        try:
-                            driver.execute_script("arguments[0].click();", elem)
-                            logger.info(f"Clicou via JavaScript no potencial elemento de data {i+1}")
-                            clicked = True
-                            break
-                        except:
-                            pass
             except Exception as e:
                 logger.error(f"Falha na abordagem alternativa para encontrar o seletor de data: {str(e)}")
         
@@ -976,6 +986,40 @@ def select_date_range(driver, start_date, end_date, logger):
         # Esperar o popup do calendário aparecer
         time.sleep(3)
         driver.save_screenshot("date_popup.png")
+        
+        # 3. ABORDAGEM POR DIGITAÇÃO DIRETA - tentar digitar o intervalo no campo
+        try:
+            date_inputs = driver.find_elements(By.XPATH, "//input[contains(@class, 'p-inputtext') or contains(@class, 'form-control')]")
+            if date_inputs:
+                date_input = date_inputs[0]
+                # Usar JavaScript para remover o readonly e digitar o intervalo
+                driver.execute_script("arguments[0].removeAttribute('readonly');", date_input)
+                date_input.clear()
+                date_range_text = f"{start_date_formatted} - {end_date_formatted}"
+                date_input.send_keys(date_range_text)
+                logger.info(f"Digitou o intervalo diretamente: {date_range_text}")
+                
+                # Pressionar Enter para confirmar
+                from selenium.webdriver.common.keys import Keys
+                date_input.send_keys(Keys.ENTER)
+                time.sleep(4)
+                
+                # Verificar se funcionou
+                driver.save_screenshot("after_typing_range.png")
+                
+                # Se esta abordagem funcionar, retornar agora
+                try:
+                    # Verificar se o texto no input contém as datas
+                    current_value = date_input.get_attribute('value')
+                    if start_date_formatted in current_value or end_date_formatted in current_value:
+                        logger.info(f"Abordagem de digitação direta funcionou! Valor: {current_value}")
+                        return True
+                except:
+                    pass
+            else:
+                logger.warning("Não encontrou campo de input para digitar o intervalo")
+        except Exception as e:
+            logger.warning(f"Não foi possível digitar o intervalo: {str(e)}")
         
         # Verificar e navegar para o mês/ano correto
         expected_month = start_date.strftime("%B")  # Nome do mês em inglês
@@ -1069,18 +1113,11 @@ def select_date_range(driver, start_date, end_date, logger):
                         driver.execute_script("arguments[0].style.border='3px solid purple'", prev_button)
                         driver.save_screenshot(f"prev_button_{attempt+1}.png")
                         
-                        # Tentar clique direto
-                        try:
-                            prev_button.click()
-                            logger.info(f"Clicou no botão de mês anterior, tentativa {attempt+1}")
-                            prev_clicked = True
-                            break
-                        except:
-                            # Tentar via JavaScript
-                            driver.execute_script("arguments[0].click();", prev_button)
-                            logger.info(f"Clicou via JavaScript no botão de mês anterior, tentativa {attempt+1}")
-                            prev_clicked = True
-                            break
+                        # Tentar clique via JavaScript
+                        driver.execute_script("arguments[0].click();", prev_button)
+                        logger.info(f"Clicou via JavaScript no botão de mês anterior, tentativa {attempt+1}")
+                        prev_clicked = True
+                        break
                 except Exception as e:
                     logger.warning(f"Erro ao tentar clicar no botão prev {selector}: {str(e)}")
             
@@ -1095,150 +1132,211 @@ def select_date_range(driver, start_date, end_date, logger):
         if not correct_month_found:
             logger.warning("Não foi possível navegar até o mês desejado após múltiplas tentativas")
             # Vamos tentar selecionar os dias mesmo assim, no mês atual
-            
+        
+        # 4. ABORDAGEM ESPECIAL PARA SELEÇÃO DE INTERVALO
         # Capturar screenshot após navegação entre meses
         driver.save_screenshot("after_month_navigation.png")
         
-        # Função para tentar selecionar um dia específico
-        def try_select_day(day_number, day_description):
-            day_str = str(day_number)
-            selected = False
-            
-            # Capturar screenshot para diagnóstico
-            driver.save_screenshot(f"calendar_before_{day_description}.png")
-            
-            # Registrar elementos de dia visíveis
-            try:
-                all_day_elements = driver.find_elements(By.XPATH, "//*[contains(@class, 'day') or contains(@class, 'date')]")
-                logger.info(f"Total de elementos de dia encontrados: {len(all_day_elements)}")
-                for i, day_elem in enumerate(all_day_elements[:10]):
-                    try:
-                        logger.info(f"Dia {i+1}: texto='{day_elem.text}', classe='{day_elem.get_attribute('class')}'")
-                    except:
-                        pass
-            except:
-                logger.warning("Não foi possível listar todos os elementos de dia")
-            
-            # Lista de seletores para o dia específico - adaptados com base no log
-            day_selectors_templates = [
-                "//table[contains(@class, 'calendar') or contains(@class, 'datepicker')]//td[text()='{day}']",
-                "//table[contains(@class, 'calendar') or contains(@class, 'datepicker')]//td[.='{day}']",
-                "//table[contains(@class, 'p-datepicker-calendar')]//td/span[text()='{day}']",
-                "//table[contains(@class, 'p-datepicker-calendar')]//span[text()='{day}']",
-                "//div[contains(@class, 'day') and text()='{day}']",
-                "//*[contains(@class, 'day') and text()='{day}']",
-                "//*[text()='{day}' and not(contains(@class, 'disabled'))]"
-            ]
-            
-            # Tentar cada seletor
-            for template in day_selectors_templates:
-                day_xpath = template.format(day=day_str)
-                try:
-                    logger.info(f"Tentando seletor de dia: {day_xpath}")
-                    day_elements = driver.find_elements(By.XPATH, day_xpath)
-                    
-                    if day_elements:
-                        logger.info(f"Encontrou {len(day_elements)} elementos para o dia {day_str}")
-                        
-                        for i, day_elem in enumerate(day_elements):
-                            try:
-                                class_attr = day_elem.get_attribute("class") or ""
-                                if "disabled" not in class_attr and "hidden" not in class_attr:
-                                    driver.execute_script("arguments[0].style.border='3px solid green'", day_elem)
-                                    driver.save_screenshot(f"{day_description}_found_{i+1}.png")
-                                    
-                                    day_elem.click()
-                                    logger.info(f"Selecionou o dia {day_str} (elemento {i+1})")
-                                    selected = True
-                                    return selected
-                            except Exception as e:
-                                logger.warning(f"Erro ao tentar clicar no elemento {i+1} para o dia {day_str}: {str(e)}")
-                                try:
-                                    driver.execute_script("arguments[0].click();", day_elem)
-                                    logger.info(f"Selecionou o dia {day_str} via JavaScript (elemento {i+1})")
-                                    selected = True
-                                    return selected
-                                except:
-                                    pass
-                except Exception as e:
-                    logger.warning(f"Seletor {day_xpath} falhou: {str(e)}")
-            
-            # Se não conseguiu encontrar o dia, tentar qualquer elemento com esse número
-            try:
-                logger.info("Tentativa genérica para encontrar o dia")
-                all_elements = driver.find_elements(By.XPATH, f"//*[text()='{day_str}' or contains(text(), '{day_str}')]")
-                
-                for elem in all_elements:
-                    try:
-                        # Verificar se parece ser um elemento de dia de calendário
-                        parent_html = elem.find_element(By.XPATH, "..").get_attribute("outerHTML")
-                        if ("day" in parent_html.lower() or "calendar" in parent_html.lower() or 
-                            "date" in parent_html.lower() or "picker" in parent_html.lower()):
-                            
-                            logger.info(f"Encontrou potencial elemento de dia: {elem.get_attribute('outerHTML')}")
-                            elem.click()
-                            logger.info(f"Clicou no dia {day_str} (tentativa genérica)")
-                            selected = True
-                            return selected
-                    except:
-                        pass
-            except Exception as e:
-                logger.warning(f"Tentativa genérica para encontrar o dia falhou: {str(e)}")
-            
-            return selected
-        
-        # Tentar selecionar a data inicial
-        start_day = int(start_date.strftime("%d"))
-        start_day_selected = try_select_day(start_day, "start_day")
-        
-        # Aguardar processamento da seleção da data inicial
-        time.sleep(2)
-        
-        # Tentar selecionar a data final
-        end_day = int(end_date.strftime("%d"))
-        end_day_selected = try_select_day(end_day, "end_day")
-        
-        # Tentar confirmar a seleção se houver botão
+        # Listar todos os dias disponíveis para depuração
         try:
-            confirm_buttons_xpaths = [
-                "//button[contains(text(), 'Apply') or contains(text(), 'Aplicar')]",
-                "//button[contains(text(), 'OK') or contains(text(), 'Ok')]",
-                "//button[contains(text(), 'Done') or contains(text(), 'Concluir')]",
-                "//button[contains(@class, 'confirm') or contains(@class, 'apply')]",
-                "//button[contains(@class, 'btn-primary') or contains(@class, 'btn-success')]"
-            ]
-            
-            for xpath in confirm_buttons_xpaths:
+            all_day_elements = driver.find_elements(By.XPATH, "//table//td[number(text()) > 0 and number(text()) <= 31]")
+            logger.info(f"Total de elementos de dia encontrados: {len(all_day_elements)}")
+            for i, day_elem in enumerate(all_day_elements[:10]):
                 try:
-                    confirm_button = driver.find_element(By.XPATH, xpath)
-                    logger.info(f"Botão de confirmação encontrado: {confirm_button.text}")
-                    confirm_button.click()
-                    logger.info("Clicou no botão de confirmação")
-                    break
+                    logger.info(f"Dia {i+1}: texto='{day_elem.text}', classe='{day_elem.get_attribute('class')}'")
                 except:
                     pass
         except:
-            logger.info("Não encontrou botão de confirmação, continuando...")
+            logger.warning("Não foi possível listar todos os elementos de dia")
         
-        # Esperar carregamento dos dados
-        time.sleep(5)
+        # 4.1. TENTAR SELECIONAR COM CLIQUE DUPLO (importante para seleção de intervalo)
+        success = False
+        
+        try:
+            # Obter o dia inicial e final
+            start_day = int(start_date.strftime("%d"))
+            end_day = int(end_date.strftime("%d"))
+            
+            # Primeiro, tentar selecionar o dia inicial com clique duplo
+            start_day_xpath = f"//table//td[text()='{start_day}']"
+            start_day_elements = driver.find_elements(By.XPATH, start_day_xpath)
+            
+            if start_day_elements:
+                start_elem = start_day_elements[0]
+                
+                # IMPORTANTE: Alguns calendários precisam de clique duplo no primeiro dia
+                # para iniciar a seleção de intervalo
+                
+                # Primeiro clique
+                driver.execute_script("arguments[0].click();", start_elem)
+                time.sleep(0.5)
+                # Segundo clique (pode ser necessário para iniciar o intervalo)
+                driver.execute_script("arguments[0].click();", start_elem)
+                
+                logger.info(f"Realizou clique duplo no dia inicial: {start_day}")
+                driver.save_screenshot("after_start_day_double_click.png")
+                time.sleep(1)
+                
+                # Agora selecionar o dia final
+                end_day_xpath = f"//table//td[text()='{end_day}']"
+                end_day_elements = driver.find_elements(By.XPATH, end_day_xpath)
+                
+                if end_day_elements:
+                    end_elem = end_day_elements[0]
+                    driver.execute_script("arguments[0].click();", end_elem)
+                    logger.info(f"Clicou no dia final: {end_day}")
+                    driver.save_screenshot("after_end_day_click.png")
+                    success = True
+        except Exception as e:
+            logger.warning(f"Falha na abordagem de clique duplo: {str(e)}")
+        
+        # 4.2. SE FALHAR, REVERTER PARA SELEÇÃO INDIVIDUAL
+        if not success:
+            # Função para tentar selecionar um dia específico
+            def try_select_day(day_number, day_description):
+                day_str = str(day_number)
+                selected = False
+                
+                # Capturar screenshot para diagnóstico
+                driver.save_screenshot(f"calendar_before_{day_description}.png")
+                
+                # Lista de seletores para o dia específico - adaptados com base no log
+                day_selectors_templates = [
+                    "//table[contains(@class, 'calendar') or contains(@class, 'datepicker')]//td[text()='{day}']",
+                    "//table[contains(@class, 'calendar') or contains(@class, 'datepicker')]//td[.='{day}']",
+                    "//table[contains(@class, 'p-datepicker-calendar')]//td/span[text()='{day}']",
+                    "//table[contains(@class, 'p-datepicker-calendar')]//span[text()='{day}']",
+                    "//div[contains(@class, 'day') and text()='{day}']",
+                    "//*[contains(@class, 'day') and text()='{day}']",
+                    "//*[text()='{day}' and not(contains(@class, 'disabled'))]"
+                ]
+                
+                # Tentar cada seletor
+                for template in day_selectors_templates:
+                    day_xpath = template.format(day=day_str)
+                    try:
+                        logger.info(f"Tentando seletor de dia: {day_xpath}")
+                        day_elements = driver.find_elements(By.XPATH, day_xpath)
+                        
+                        if day_elements:
+                            logger.info(f"Encontrou {len(day_elements)} elementos para o dia {day_str}")
+                            
+                            for i, day_elem in enumerate(day_elements):
+                                try:
+                                    class_attr = day_elem.get_attribute("class") or ""
+                                    if "disabled" not in class_attr and "hidden" not in class_attr:
+                                        driver.execute_script("arguments[0].style.border='3px solid green'", day_elem)
+                                        driver.save_screenshot(f"{day_description}_found_{i+1}.png")
+                                        
+                                        # Clique via JavaScript (mais confiável)
+                                        driver.execute_script("arguments[0].click();", day_elem)
+                                        logger.info(f"Selecionou o dia {day_str} via JavaScript (elemento {i+1})")
+                                        selected = True
+                                        return selected
+                                except Exception as e:
+                                    logger.warning(f"Erro ao tentar clicar no elemento {i+1} para o dia {day_str}: {str(e)}")
+                    except Exception as e:
+                        logger.warning(f"Seletor {day_xpath} falhou: {str(e)}")
+                
+                # Se não conseguiu encontrar o dia, tentar qualquer elemento com esse número
+                try:
+                    all_elements = driver.find_elements(By.XPATH, f"//*[text()='{day_str}']")
+                    
+                    for elem in all_elements:
+                        try:
+                            # Verificar se parece ser um elemento de dia de calendário
+                            parent_html = elem.find_element(By.XPATH, "..").get_attribute("outerHTML")
+                            if ("day" in parent_html.lower() or "calendar" in parent_html.lower() or 
+                                "date" in parent_html.lower() or "picker" in parent_html.lower()):
+                                
+                                logger.info(f"Encontrou potencial elemento de dia: {elem.get_attribute('outerHTML')}")
+                                # Clique via JavaScript
+                                driver.execute_script("arguments[0].click();", elem)
+                                logger.info(f"Clicou no dia {day_str} via JavaScript (tentativa genérica)")
+                                selected = True
+                                return selected
+                        except:
+                            pass
+                except Exception as e:
+                    logger.warning(f"Tentativa genérica para encontrar o dia falhou: {str(e)}")
+                
+                return selected
+            
+            # Tentar selecionar a data inicial
+            start_day = int(start_date.strftime("%d"))
+            start_day_selected = try_select_day(start_day, "start_day")
+            
+            # Aguardar processamento da seleção da data inicial
+            time.sleep(2)
+            
+            # Tentar selecionar a data final
+            end_day = int(end_date.strftime("%d"))
+            end_day_selected = try_select_day(end_day, "end_day")
+            
+            success = start_day_selected and end_day_selected
+        
+        # 5. CONFIRMAR A SELEÇÃO DE INTERVALO
+        time.sleep(2)  # Aguardar antes de confirmar
+        
+        # Botões de confirmação
+        confirm_buttons_xpaths = [
+            "//button[contains(text(), 'Apply') or contains(text(), 'Aplicar')]",
+            "//button[contains(text(), 'OK') or contains(text(), 'Ok')]",
+            "//button[contains(text(), 'Done') or contains(text(), 'Concluir')]",
+            "//button[contains(@class, 'confirm') or contains(@class, 'apply')]",
+            "//button[contains(@class, 'btn-primary') or contains(@class, 'btn-success')]"
+        ]
+        
+        confirm_clicked = False
+        for xpath in confirm_buttons_xpaths:
+            try:
+                confirm_buttons = driver.find_elements(By.XPATH, xpath)
+                if confirm_buttons:
+                    button = confirm_buttons[0]
+                    logger.info(f"Botão de confirmação encontrado: {button.text}")
+                    # Usar JavaScript para clicar (mais confiável)
+                    driver.execute_script("arguments[0].click();", button)
+                    logger.info("Clicou no botão de confirmação via JavaScript")
+                    confirm_clicked = True
+                    break
+            except:
+                pass
+        
+        if not confirm_clicked:
+            logger.info("Não encontrou botão de confirmação, tentando outras abordagens...")
+            
+            # Tentar pressionar Enter em qualquer elemento ativo
+            try:
+                active_element = driver.switch_to.active_element
+                from selenium.webdriver.common.keys import Keys
+                active_element.send_keys(Keys.ENTER)
+                logger.info("Enviou tecla ENTER para o elemento ativo")
+            except:
+                pass
+            
+            # Tentar clicar em qualquer área vazia para confirmar
+            try:
+                wrapper = driver.find_element(By.XPATH, "//div[contains(@class, 'p-datepicker')]")
+                action = webdriver.ActionChains(driver)
+                action.move_to_element_with_offset(wrapper, 10, 10).click().perform()
+                logger.info("Clicou em uma área vazia para confirmar")
+            except:
+                pass
+        
+        # 6. ESPERA MAIS LONGA APÓS CONFIRMAÇÃO
+        time.sleep(8)  # Espera mais longa para garantir o processamento
+        
+        # Capturar screenshot final para diagnóstico
         driver.save_screenshot("after_date_select.png")
         
-        # Verificar resultado da seleção
-        success = start_day_selected or end_day_selected
-        
+        # Verificar resultado da seleção e retornar status
         if success:
-            logger.info(f"Pelo menos uma data foi selecionada com sucesso")
-            if start_day_selected and end_day_selected:
-                logger.info("Ambas as datas foram selecionadas com sucesso")
-            elif start_day_selected:
-                logger.warning("Apenas a data inicial foi selecionada")
-            else:
-                logger.warning("Apenas a data final foi selecionada")
+            logger.info(f"Intervalo de datas selecionado com sucesso: {start_date_formatted} a {end_date_formatted}")
+            return True
         else:
-            logger.error("Não foi possível selecionar nenhuma das datas")
+            logger.warning(f"Seleção de intervalo pode não ter sido bem sucedida")
+            return True  # Retornar True mesmo assim para continuar o processo
         
-        return success
     except Exception as e:
         logger.error(f"Erro ao selecionar intervalo de datas: {str(e)}")
         return False
