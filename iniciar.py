@@ -16,6 +16,278 @@ from db_utils import load_stores, get_store_details, save_store
 # CSS atualizado com bordas arredondadas e fundo verde para tabelas
 st.markdown("""
 <style>
+/* Correção para remover a barra branca no topo */
+.main .block-container {
+    padding-top: 0 !important;
+    max-width: 1000px;
+}
+
+/* Ajuste para o container principal - remove espaços em branco */
+.css-1d391kg, .css-1wrcr25, .css-ocqkz7, .css-uf99v8 {
+    padding-top: 0 !important;
+    margin-top: 0 !important;
+}
+
+/* Ajuste para o elemento root - remove espaços em branco no topo */
+.st-emotion-cache-ffhzg2 {
+    padding-top: 0 !important;
+}
+
+/* Estilos gerais para melhorar a aparência */
+.stApp {
+    background-color: #f0f5f3;
+}
+
+/* Cabeçalho do dashboard */
+h1 {
+    padding: 15px;
+    border-radius: 10px;
+    background: linear-gradient(135deg, #0E9E6D 0%, #008555 100%);
+    color: white !important;
+    text-align: center;
+    margin-bottom: 25px;
+    box-shadow: 0 4px 12px rgba(14, 158, 109, 0.3);
+}
+
+/* Containers para as seções principais */
+.main-section {
+    background-color: white;
+    border-radius: 12px;
+    padding: 20px;
+    margin-bottom: 30px;
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.1);
+    border-top: 5px solid #0E9E6D;
+}
+
+/* Estilo para a barra lateral - cópia exata */
+section[data-testid="stSidebar"] {
+    background: linear-gradient(160deg, #ffffff, #f0f5f3);
+    border-right: 1px solid rgba(14, 158, 109, 0.2);
+    box-shadow: 2px 0 10px rgba(0, 0, 0, 0.05);
+}
+
+/* Título principal da barra lateral - original mantido */
+.brand-title {
+    color: #0E9E6D;
+    font-size: 2rem;
+    font-weight: bold;
+    margin-bottom: 1rem;
+    text-align: left;
+}
+
+/* Linha divisória simples - original mantido */
+.sidebar-divider {
+    border-top: 1px solid #ddd;
+    margin: 1rem 0;
+}
+
+/* Título "Seu painel" - original mantido */
+.panel-title {
+    text-align: left;
+    font-size: 1rem;
+    margin-bottom: 1rem;
+}
+
+/* Linha única de controles para o dashboard */
+.single-line-container {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 20px;
+    padding: 15px;
+    background: linear-gradient(to right, #ffffff, #f5f9f7);
+    border-radius: 10px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+    margin-bottom: 20px;
+    border-left: 4px solid #0E9E6D;
+}
+
+/* Containers de métricas - estilo geral */
+div[data-testid="metric-container"] {
+    background: linear-gradient(145deg, #ffffff, #f8fcfa);
+    border-radius: 10px;
+    padding: 20px;
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.1);
+    margin-bottom: 20px;
+    border: 1px solid rgba(14, 158, 109, 0.2);
+    transition: transform 0.3s, box-shadow 0.3s;
+    position: relative;
+    overflow: hidden;
+}
+
+div[data-testid="metric-container"]:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 12px 25px rgba(0, 0, 0, 0.15);
+}
+
+/* Efeito de destaque lateral */
+div[data-testid="metric-container"]::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 6px;
+    height: 100%;
+    background: linear-gradient(to bottom, #0E9E6D, #08724e);
+}
+
+/* Título da métrica (Pedidos, Em Trânsito, Entregues) */
+div[data-testid="metric-container"] > div:first-child {
+    font-weight: bold;
+    color: #0E9E6D;
+    font-size: 1.2rem;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 10px;
+}
+
+/* Valor da métrica (números) */
+div[data-testid="metric-container"] > div:nth-child(2) {
+    font-size: 2.5rem;
+    font-weight: 800;
+    color: #333;
+    text-shadow: 1px 1px 2px rgba(0,0,0,0.1);
+    letter-spacing: -1px;
+}
+
+/* Valor monetário da métrica */
+div[data-testid="metric-container"] > div:nth-child(3) {
+    color: #0E9E6D;
+    font-weight: bold;
+    font-size: 1.15rem;
+    background: linear-gradient(45deg, #0E9E6D, #077a52);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    padding: 5px 10px;
+    border-radius: 20px;
+    display: inline-block;
+    margin-top: 5px;
+    box-shadow: 0 2px 10px rgba(14, 158, 109, 0.2);
+}
+
+/* Estilo específico para métricas Dropi */
+.dropi-metrics div[data-testid="metric-container"]::before {
+    background: linear-gradient(to bottom, #FF8C00, #FF6347);
+}
+
+.dropi-metrics div[data-testid="metric-container"] > div:first-child {
+    color: #FF8C00;
+}
+
+.dropi-metrics div[data-testid="metric-container"] > div:nth-child(3) {
+    background: linear-gradient(45deg, #FF8C00, #FF6347);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    box-shadow: 0 2px 10px rgba(255, 140, 0, 0.2);
+}
+
+/* Caixas de informação */
+.info-box {
+    background: linear-gradient(to right, #f0f7f4, #ffffff);
+    border-radius: 8px;
+    padding: 12px;
+    margin-top: 15px;
+    margin-bottom: 20px;
+    text-align: center;
+    border-left: 4px solid #0E9E6D;
+    box-shadow: 0 3px 10px rgba(0, 0, 0, 0.05);
+    font-weight: 500;
+}
+
+/* Estilizando tabelas e gráficos */
+[data-testid="stDataFrame"] {
+    border-radius: 10px;
+    overflow: hidden;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.08);
+}
+
+/* Botões mais atraentes - preservando alinhamento à esquerda original */
+button {
+    background: linear-gradient(135deg, #0E9E6D 0%, #008555 100%) !important;
+    color: white !important;
+    border-radius: 8px !important;
+    font-weight: bold !important;
+    box-shadow: 0 4px 10px rgba(14, 158, 109, 0.3) !important;
+    transition: all 0.2s !important;
+}
+
+button:hover {
+    transform: translateY(-2px) !important;
+    box-shadow: 0 6px 15px rgba(14, 158, 109, 0.4) !important;
+}
+
+/* Forçar alinhamento à esquerda nos botões da barra lateral - mantido original */
+button[data-testid="baseButton-secondary"] {
+    text-align: left !important;
+    justify-content: flex-start !important;
+}
+
+/* Estilo dos ícones Material - mantido original */
+.material-symbols-rounded {
+    font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+    margin-right: 8px;
+    vertical-align: text-bottom;
+}
+
+/* Estilo para divisores */
+hr {
+    height: 3px !important;
+    background: linear-gradient(to right, transparent, #0E9E6D, transparent) !important;
+    border: none !important;
+    margin: 30px 0 !important;
+}
+
+/* Estilo para subcabeçalhos */
+h3, h4, h5 {
+    color: #0E9E6D !important;
+    border-bottom: 2px solid #e0e0e0;
+    padding-bottom: 8px;
+    margin-bottom: 15px !important;
+}
+
+/* Melhoria na exibição de selectbox e date input */
+.stSelectbox, .stDateInput {
+    background-color: white;
+    border-radius: 8px;
+    padding: 5px;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.05);
+}
+
+/* Estilos originais da página de login mantidos exatamente como estavam */
+.login-page {
+    background-color: #0E9E6D;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    z-index: -1;
+}
+
+/* Estilização de botões primários - original mantido */
+button[data-baseweb="button"].st-eb {
+    background-color: #0E9E6D;
+}
+
+/* Aplica padronização para cards - original mantido */
+.st-emotion-cache-1kyxreq, .st-emotion-cache-16txtl3 {
+    padding: 1.5rem;
+    border-radius: 10px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+/* Estilização para as fontes de login - original mantido */
+.login-title {
+    margin-bottom: 0.5rem;
+    color: #0E9E6D;
+    font-size: 1.8rem;
+    font-weight: bold;
+}
+
+.login-subtitle {
+    color: #666;
+    margin-bottom: 1.5rem;
+}
 /* CSS Simplificado para a aplicação */
 
 /* Fundo do login */

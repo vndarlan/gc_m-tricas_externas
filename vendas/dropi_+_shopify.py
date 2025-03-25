@@ -41,75 +41,34 @@ logger = logging.getLogger("dashboard_automation")
 # Tema modificado para integração
 st.markdown("""
 <style>
-/* Adicionar cores de fundo e melhorar contraste visual */
-/* Estilo para contêineres de tabelas e gráficos */
-.dashboard-container {
-    background-color: #f5f7fa;
-    border-radius: 10px;
-    padding: 15px;
-    margin: 10px 0;
-    border: 1px solid #e0e5eb;
-    box-shadow: 0 3px 6px rgba(0, 0, 0, 0.08);
-}
-
-/* Estilo para cabeçalhos de seção */
-.section-header {
-    font-size: 18px;
-    font-weight: 600;
-    color: #444;
-    margin-bottom: 12px;
-    padding-bottom: 8px;
-    border-bottom: 2px solid #e0e5eb;
-}
-
-/* Estilo para melhorar contraste nos cards de métricas */
-div[data-testid="metric-container"] {
-    background-color: #ffffff !important;
-    border: 1px solid #dde2e8 !important;
-    padding: 15px 20px !important;
-    border-radius: 8px !important;
-    margin: 10px 0 !important;
-    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.05) !important;
-}
-
-/* Estilo para tabelas mais contrastadas */
-div.stDataFrame {
-    background-color: #f5f7fa !important;
-    padding: 8px !important;
-    border-radius: 8px !important;
-    border: 1px solid #dde2e8 !important;
-}
-
-div.stDataFrame table {
-    background-color: white !important;
-    border-collapse: separate !important;
-    border-spacing: 0 !important;
-    border-radius: 6px !important;
-    overflow: hidden !important;
-    box-shadow: 0 2px 3px rgba(0, 0, 0, 0.05) !important;
-}
-
-div.stDataFrame th {
-    background-color: #eef2f7 !important;
-    color: #445069 !important;
-    font-weight: 600 !important;
-    padding: 8px 15px !important;
-    border-bottom: 2px solid #dde2e8 !important;
-}
-
-div.stDataFrame td {
-    border-bottom: 1px solid #f0f2f5 !important;
-    padding: 8px 15px !important;
-}
-
-/* Estilo para gráficos com fundo mais suave */
-div[data-testid="stVegaLiteChart"] {
-    background-color: #f9fafc !important;
-    padding: 15px !important;
-    border-radius: 8px !important;
-    border: 1px solid #dde2e8 !important;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.04) !important;
-}
+    /* Remover background escuro e cores azuis */
+    .stApp {
+        background-color: transparent !important;
+        color: inherit !important;
+    }
+    
+    /* Manter apenas formatações de layout */
+    .header {
+        font-size: 36px;
+        font-weight: bold;
+        text-align: center;
+        margin-bottom: 20px;
+    }
+    .subheader {
+        font-size: 24px;
+        font-weight: bold;
+        text-align: center;
+        margin-bottom: 30px;
+    }
+    
+    /* Remover cores especiais de fundo */
+    div[data-testid="stMetric"] {
+        background-color: transparent !important;
+    }
+    
+    div[data-testid="stMetric"] > div:first-child {
+        color: inherit !important;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -1776,10 +1735,6 @@ def display_shopify_data(data, selected_category):
         
         # Agrupar dados por produto
         if not filtered_data.empty:
-            # Em vez de st.info, usamos o formato compacto
-            period_text = f"Mostrando {len(filtered_data)} produtos para o filtro selecionado"
-            st.markdown(f'<div class="compact-info">{period_text}</div>', unsafe_allow_html=True)
-            
             # Preparar os dados para agrupamento
             # Como URLs e imagens podem ser diferentes para mesmo produto, pegamos a primeira URL e imagem para cada produto
             url_mapping = {}
@@ -1832,11 +1787,9 @@ def display_shopify_data(data, selected_category):
                     use_container_width=True
                 )
         else:
-            # Mensagem compacta para dados vazios
-            st.markdown('<div class="compact-info">Sem dados disponíveis para o filtro selecionado</div>', unsafe_allow_html=True)
-    else:
-        # Mensagem compacta para dados vazios
-        st.markdown('<div class="compact-info">Não há dados disponíveis para o intervalo selecionado</div>', unsafe_allow_html=True)
+            st.warning("Nenhum produto encontrado com o filtro selecionado")
+    #else:
+        st.info("Não há dados disponíveis para o intervalo selecionado")
 
 def display_shopify_chart(data, selected_category):
     """Exibe gráfico de barras (colunas) para produtos vs número de pedidos para os dados Shopify."""
@@ -1953,14 +1906,14 @@ def display_dropi_data(store_id, start_date_str, end_date_str):
         with col3:
             st.metric("Entregues", f"{total_delivered}", f"{currency_to} {total_delivered_value:,.2f}")
         
-        # Mensagem compacta para dados existentes
+        # Exibir tabela com todos os dados e uma mensagem de confirmação do período
         if start_date_str == end_date_str:
-            period_text = f"{len(data_df)} produtos • {start_date_str} • Valores em {currency_to}"
+            period_text = f"Mostrando {len(data_df)} produtos para a data: {start_date_str} (Valores em {currency_to})"
         else:
-            period_text = f"{len(data_df)} produtos • {start_date_str} a {end_date_str} • Valores em {currency_to}"
+            period_text = f"Mostrando {len(data_df)} produtos para o período: {start_date_str} a {end_date_str} (Valores em {currency_to})"
         
         with st.expander("Produtos Dropi", expanded=True):
-            st.markdown(f'<div class="compact-info">{period_text}</div>', unsafe_allow_html=True)
+            st.info(period_text)
             
             # Primeiro, criar uma cópia do DataFrame sem a coluna 'date'
             display_df = data_df.drop(columns=['date'], errors='ignore')
@@ -1995,13 +1948,12 @@ def display_dropi_data(store_id, start_date_str, end_date_str):
         
         return data_df
     else:
-        # Mensagem compacta para sem dados
         if start_date_str == end_date_str:
-            st.markdown(f'<div class="compact-info">Sem dados para {start_date_str}</div>', unsafe_allow_html=True)
+            st.info(f"Não há dados disponíveis da Dropi para a data {start_date_str}.")
         else:
-            st.markdown(f'<div class="compact-info">Sem dados para o período {start_date_str} a {end_date_str}</div>', unsafe_allow_html=True)
+            st.info(f"Não há dados disponíveis da Dropi para o período {start_date_str} a {end_date_str}.")
         return pd.DataFrame()
-    
+
 def adapt_upsert_query(base_query, update_columns, key_columns):
     """
     Adapta a sintaxe de UPSERT/ON CONFLICT para funcionar em ambos PostgreSQL e SQLite.
@@ -2159,6 +2111,34 @@ def display_effectiveness_table(store_id, start_date_str, end_date_str):
     
     conn.close()
     
+    # Estilo para tabelas com fundo branco, incluindo cabeçalhos
+    st.markdown("""
+    <style>
+    /* Tabelas e componentes relacionados com fundo branco */
+    .stDataFrame, .stDataEditor, .stTable, 
+    .stDataFrame table, .stDataEditor table, .stTable table {
+        background-color: white !important;
+    }
+    
+    /* Cabeçalhos com fundo branco */
+    .stDataFrame thead tr, .stDataEditor thead tr, .stTable thead tr,
+    .stDataFrame th, .stDataEditor th, .stTable th {
+        background-color: white !important;
+        color: black !important;
+    }
+    
+    /* Remover cores alternadas de linhas */
+    .stDataFrame tbody tr, .stDataEditor tbody tr, .stTable tbody tr {
+        background-color: white !important;
+    }
+    
+    /* Remover cores de fundo padrão de células */
+    .stDataFrame td, .stDataEditor td, .stTable td {
+        background-color: white !important;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+    
     # Process the data if we have any
     if not dropi_data.empty:
         # Calculate effectiveness
@@ -2175,13 +2155,11 @@ def display_effectiveness_table(store_id, start_date_str, end_date_str):
             how='left'
         )
         
-        # Adicionamos uma mensagem compacta
+        # Informar data dos dados
         if start_date_str == end_date_str:
-            period_text = f"{len(dropi_data)} produtos • {start_date_str}"
+            st.info(f"Mostrando {len(dropi_data)} produtos para a data: {start_date_str}")
         else:
-            period_text = f"{len(dropi_data)} produtos • {start_date_str} a {end_date_str}"
-        
-        st.markdown(f'<div class="compact-info">{period_text}</div>', unsafe_allow_html=True)
+            st.info(f"Mostrando {len(dropi_data)} produtos para o período: {start_date_str} a {end_date_str}")
         
         # Função para aplicar cores de fundo por linha
         def get_row_color(effectiveness):
@@ -2288,11 +2266,8 @@ def display_effectiveness_table(store_id, start_date_str, end_date_str):
                 st.success("Valores de efetividade geral salvos com sucesso!")
             
     else:
-        # Mensagem compacta quando não há dados
-        if start_date_str == end_date_str:
-            st.markdown(f'<div class="compact-info">Sem dados de efetividade para {start_date_str}</div>', unsafe_allow_html=True)
-        else:
-            st.markdown(f'<div class="compact-info">Sem dados de efetividade para o período {start_date_str} a {end_date_str}</div>', unsafe_allow_html=True)
+        # MODIFICAÇÃO: Removida a mensagem de aviso que estava duplicada
+        pass  # Não exibe nenhuma mensagem quando não há dados
         
 def update_dropi_data_silent(store, start_date, end_date):
     """Atualiza os dados da Dropi sem exibir feedback de progresso."""
@@ -2370,137 +2345,6 @@ def update_dropi_data_silent(store, start_date, end_date):
     
 def store_dashboard(store):
     """Exibe o dashboard para a loja selecionada com o novo layout."""
-    # Adicionar CSS para mensagens compactas
-    st.markdown("""
-    <style>
-    /* Estilo compacto para mensagens informativas */
-    .compact-info {
-        color: #666;
-        font-size: 0.8em;
-        padding: 2px 8px;
-        background-color: #f8f9fa;
-        border-left: 2px solid #cfe2ff;
-        margin: 2px 0;
-        text-align: right;
-    }
-
-    /* Esconder mensagens informativas nas tabelas de efetividade */
-    #effectiveness-section .stAlert {
-        display: none !important;
-    }
-    </style>
-    """, unsafe_allow_html=True)
-    
-    # Adicionar CSS para cores de fundo e melhoria visual
-    st.markdown("""
-    <style>
-    /* Adicionar cores de fundo e melhorar contraste visual */
-    /* Estilo para contêineres de tabelas e gráficos */
-    .dashboard-container {
-        background-color: #EBF3EF;
-        border-radius: 10px;
-        padding: 15px;
-        margin: 20px 0; /* Aumentado de 10px para 20px */
-        border: 1px solid #d0e0d9;
-        box-shadow: 0 3px 6px rgba(0, 0, 0, 0.08);
-    }
-
-    /* Reduzir ainda mais o tamanho dos títulos */
-    .section-header {
-        font-size: 14px; /* Reduzido de 16px para 14px */
-        font-weight: 600;
-        color: #444;
-        margin-bottom: 8px;
-        padding-bottom: 4px;
-        border-bottom: 1px solid #d0e0d9;
-    }
-
-    /* Remover qualquer borda verde que possa aparecer */
-    h3.section-header {
-        border-bottom: none !important;
-    }
-
-    /* Espaçamento entre Shopify e Dropi */
-    .section-separator {
-        margin: 50px 0; /* Espaçamento grande entre seções principais */
-        height: 1px;
-        background-color: transparent;
-    }
-
-    /* Adicionar mais espaço entre as colunas */
-    div[data-testid="column"] {
-        padding: 0 15px !important;
-    }
-
-    /* Estilo para melhorar contraste nos cards de métricas */
-    div[data-testid="metric-container"] {
-        background-color: #ffffff !important;
-        border: 1px solid #d0e0d9 !important;
-        padding: 15px 20px !important;
-        border-radius: 8px !important;
-        margin: 10px 0 !important;
-        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.05) !important;
-    }
-
-    /* Estilo para tabelas mais contrastadas */
-    div.stDataFrame {
-        background-color: #EBF3EF !important;
-        padding: 8px !important;
-        border-radius: 8px !important;
-        border: 1px solid #d0e0d9 !important;
-    }
-
-    div.stDataFrame table {
-        background-color: white !important;
-        border-collapse: separate !important;
-        border-spacing: 0 !important;
-        border-radius: 6px !important;
-        overflow: hidden !important;
-        box-shadow: 0 2px 3px rgba(0, 0, 0, 0.05) !important;
-    }
-
-    div.stDataFrame th {
-        background-color: #e3f0e9 !important;
-        color: #445069 !important;
-        font-weight: 600 !important;
-        padding: 8px 15px !important;
-        border-bottom: 2px solid #d0e0d9 !important;
-    }
-
-    div.stDataFrame td {
-        border-bottom: 1px solid #e8f2ed !important;
-        padding: 8px 15px !important;
-    }
-
-    /* Estilo para gráficos com fundo mais suave e GARANTINDO QUE FIQUE DENTRO DO CONTÊINER */
-    div[data-testid="stVegaLiteChart"] {
-        background-color: #EBF3EF !important;
-        padding: 10px !important;
-        border-radius: 8px !important;
-        border: 1px solid #d0e0d9 !important;
-        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.04) !important;
-        width: auto !important;
-        max-width: 100% !important;
-        overflow: hidden !important;
-    }
-
-    /* Conteúdo dos gráficos não deve ultrapassar o contêiner */
-    div[data-testid="stVegaLiteChart"] canvas {
-        max-width: 100% !important;
-    }
-
-    /* Correção para o problema de largura do gráfico */
-    .vega-embed {
-        width: 100% !important;
-        max-width: 100% !important;
-    }
-
-    .vega-embed canvas {
-        max-width: 100% !important;
-    }
-    </style>
-    """, unsafe_allow_html=True)
-    
     # Configurações da Shopify
     SHOP_NAME = store["shop_name"]
     ACCESS_TOKEN = store["access_token"]
@@ -2512,74 +2356,11 @@ def store_dashboard(store):
         "X-Shopify-Access-Token": ACCESS_TOKEN,
     }
     
-    # CSS global para os cards de métricas - aplicado imediatamente
-    st.markdown("""
-    <style>
-    /* Ajuste para iniciar o dashboard do topo absoluto */
-    .main .block-container {
-        padding-top: 0 !important;
-        margin-top: 0 !important;
-    }
+    # Título principal com estilo aprimorado
+    st.markdown(f'<h1>Métricas de Produtos {store["name"]}</h1>', unsafe_allow_html=True)
     
-    header[data-testid="stHeader"] {
-        display: none !important;
-    }
-    
-    /* Estilo forte para os cards de métricas */
-    div[data-testid="metric-container"] {
-        background-color: white !important;
-        border: 1px solid #ddd !important;
-        padding: 15px !important;
-        border-radius: 8px !important;
-        margin: 10px 0 !important;
-        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1) !important;
-    }
-    
-    div[data-testid="metric-container"] > div:nth-child(1) {
-        font-weight: bold !important;
-    }
-    
-    /* Estilo padronizado para todas as mensagens de alerta/info - mais discreto */
-    div.stAlert, .info-box {
-        background-color: #f8f9fa !important;
-        padding: 8px 16px !important;
-        border-radius: 4px !important;
-        border-left: 3px solid #cfe2ff !important;
-        font-size: 0.9em !important;
-        opacity: 0.9 !important;
-        margin: 10px 0 !important;
-        box-shadow: none !important;
-    }
-    
-    /* Estilo para inputs, selectbox e botões */
-    div.stDateInput > div[data-baseweb="input"] {
-        background-color: white !important;
-        border: 1px solid #ddd !important;
-        border-radius: 8px !important;
-        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05) !important;
-    }
-    
-    div[data-baseweb="select"] {
-        background-color: white !important;
-        border: 1px solid #ddd !important;
-        border-radius: 8px !important;
-        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05) !important;
-    }
-    
-    div.stButton > button {
-        border: 1px solid #ddd !important;
-        border-radius: 8px !important;
-        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05) !important;
-    }
-    
-    /* Estilo para o container de colunas */
-    div[data-testid="column"] {
-        background-color: transparent !important;
-        border-radius: 8px !important;
-        padding: 0.5rem !important;
-    }
-    </style>
-    """, unsafe_allow_html=True)
+    # Adicionar containers de seção principal para agrupar conteúdo
+    #st.markdown('<div class="main-section">', unsafe_allow_html=True)
     
     # Definir valores padrão para datas - no início da função para garantir disponibilidade
     default_start_date = datetime.today() - timedelta(days=7)
@@ -2587,38 +2368,6 @@ def store_dashboard(store):
     update_shopify = False
     update_dropi = False
     
-    # Adicionar função auxiliar para criar cards customizados
-    def custom_metric_card(label, value, delta=None):
-        # Inicializa a cor do delta
-        delta_color = "black"
-        
-        if delta:
-            # Verifica se é um valor monetário (começa com letras como BRL, USD, etc.)
-            if isinstance(delta, str) and delta and delta[0].isalpha():
-                # Valores monetários sempre em verde
-                delta_color = "green"
-            else:
-                # Para percentuais ou outros valores numéricos
-                try:
-                    # Limpa a string para tentar conversão
-                    clean_delta = str(delta).replace("%", "").replace("$", "").strip()
-                    delta_color = "green" if float(clean_delta) > 0 else "red"
-                except (ValueError, TypeError):
-                    # Em caso de erro de conversão, usa preto
-                    delta_color = "black"
-        
-        delta_html = f'<span style="color: {delta_color};">{delta}</span>' if delta else ""
-        
-        html = f"""
-        <div style="background-color: white; border: 1px solid #ddd; padding: 18px; border-radius: 8px; 
-                 margin: 10px 0; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1); text-align: left; width: 100%;">
-            <div style="font-size: 14px; color: #666;">{label}</div>
-            <div style="font-size: 28px; font-weight: bold; margin: 8px 0;">{value}</div>
-            {delta_html}
-        </div>
-        """
-        return st.markdown(html, unsafe_allow_html=True)
-        
     # IMPORTANTE: Definir todas as variáveis de data aqui no início
     # Isso evitará que dropi_start_date_str seja acessada antes de ser definida
     dropi_start_date = default_start_date
@@ -2626,66 +2375,255 @@ def store_dashboard(store):
     dropi_start_date_str = dropi_start_date.strftime("%Y-%m-%d")
     dropi_end_date_str = dropi_end_date.strftime("%Y-%m-%d")
     
-    # ========== SEÇÃO SHOPIFY (LINHA INTEIRA) ==========
-    # Layout em linha única com logo e filtros
+    # Estilo CSS melhorado para criar uma interface mais atraente e colorida
     st.markdown("""
     <style>
-    /* Estilo para o container dos filtros */
-    .filters-container {
-        display: flex;
-        align-items: center;
+    /* Estilos gerais para melhorar a aparência */
+    .stApp {
+        background-color: #f0f5f3;
+    }
+    
+    /* Cabeçalho do dashboard */
+    h1 {
+        padding: 15px;
+        border-radius: 10px;
+        background: linear-gradient(135deg, #0E9E6D 0%, #008555 100%);
+        color: white !important;
+        text-align: center;
+        margin-bottom: 25px;
+        box-shadow: 0 4px 12px rgba(14, 158, 109, 0.3);
+    }
+    
+    /* Containers para as seções principais */
+    .main-section {
         background-color: white;
-        border: 1px solid #ddd;
+        border-radius: 12px;
+        padding: 20px;
+        margin-bottom: 30px;
+        box-shadow: 0 6px 16px rgba(0, 0, 0, 0.1);
+        border-top: 5px solid #0E9E6D;
+    }
+    
+    /* Linha única de controles */
+    .single-line-container {
+        display: flex;
+        flex-direction: row;
+        align-items: center;
+        gap: 20px;
+        padding: 15px;
+        background: linear-gradient(to right, #ffffff, #f5f9f7);
+        border-radius: 10px;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+        margin-bottom: 20px;
+        border-left: 4px solid #0E9E6D;
+    }
+    
+    /* Containers de métricas - estilo geral */
+    div[data-testid="metric-container"] {
+        background: linear-gradient(145deg, #ffffff, #f8fcfa);
+        border-radius: 10px;
+        padding: 20px;
+        box-shadow: 0 8px 20px rgba(0, 0, 0, 0.1);
+        margin-bottom: 20px;
+        border: 1px solid rgba(14, 158, 109, 0.2);
+        transition: transform 0.3s, box-shadow 0.3s;
+        position: relative;
+        overflow: hidden;
+    }
+    
+    div[data-testid="metric-container"]:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 12px 25px rgba(0, 0, 0, 0.15);
+    }
+    
+    /* Efeito de destaque lateral */
+    div[data-testid="metric-container"]::before {
+        content: "";
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 6px;
+        height: 100%;
+        background: linear-gradient(to bottom, #0E9E6D, #08724e);
+    }
+    
+    /* Título da métrica (Pedidos, Em Trânsito, Entregues) */
+    div[data-testid="metric-container"] > div:first-child {
+        font-weight: bold;
+        color: #0E9E6D;
+        font-size: 1.2rem;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        margin-bottom: 10px;
+    }
+    
+    /* Valor da métrica (números) */
+    div[data-testid="metric-container"] > div:nth-child(2) {
+        font-size: 2.5rem;
+        font-weight: 800;
+        color: #333;
+        text-shadow: 1px 1px 2px rgba(0,0,0,0.1);
+        letter-spacing: -1px;
+    }
+    
+    /* Valor monetário da métrica */
+    div[data-testid="metric-container"] > div:nth-child(3) {
+        color: #0E9E6D;
+        font-weight: bold;
+        font-size: 1.15rem;
+        background: linear-gradient(45deg, #0E9E6D, #077a52);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        padding: 5px 10px;
+        border-radius: 20px;
+        display: inline-block;
+        margin-top: 5px;
+        box-shadow: 0 2px 10px rgba(14, 158, 109, 0.2);
+    }
+    
+    /* Estilo específico para métricas Dropi */
+    .dropi-metrics div[data-testid="metric-container"]::before {
+        background: linear-gradient(to bottom, #FF8C00, #FF6347);
+    }
+    
+    .dropi-metrics div[data-testid="metric-container"] > div:first-child {
+        color: #FF8C00;
+    }
+    
+    .dropi-metrics div[data-testid="metric-container"] > div:nth-child(3) {
+        background: linear-gradient(45deg, #FF8C00, #FF6347);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        box-shadow: 0 2px 10px rgba(255, 140, 0, 0.2);
+    }
+    
+    /* Caixas de informação */
+    .info-box {
+        background: linear-gradient(to right, #f0f7f4, #ffffff);
         border-radius: 8px;
         padding: 12px;
+        margin-top: 15px;
         margin-bottom: 20px;
-        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        text-align: center;
+        border-left: 4px solid #0E9E6D;
+        box-shadow: 0 3px 10px rgba(0, 0, 0, 0.05);
+        font-weight: 500;
     }
     
-    /* Estilo para cada grupo de filtro */
-    .filter-group {
-        margin-right: 15px;
-        display: flex;
-        align-items: center;
+    /* Estilizando tabelas e gráficos */
+    [data-testid="stDataFrame"] {
+        border-radius: 10px;
+        overflow: hidden;
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.08);
     }
     
-    /* Estilo para o texto dos filtros */
-    .filter-text {
-        font-size: 14px;
-        color: #666;
-        margin-right: 5px;
+    /* Botões mais atraentes */
+    button {
+        background: linear-gradient(135deg, #0E9E6D 0%, #008555 100%) !important;
+        color: white !important;
+        border-radius: 8px !important;
+        font-weight: bold !important;
+        box-shadow: 0 4px 10px rgba(14, 158, 109, 0.3) !important;
+        transition: all 0.2s !important;
+    }
+    
+    button:hover {
+        transform: translateY(-2px) !important;
+        box-shadow: 0 6px 15px rgba(14, 158, 109, 0.4) !important;
+    }
+    
+    /* Estilo para divisores */
+    hr {
+        height: 3px !important;
+        background: linear-gradient(to right, transparent, #0E9E6D, transparent) !important;
+        border: none !important;
+        margin: 30px 0 !important;
+    }
+    
+    /* Estilo para subcabeçalhos */
+    h3, h4, h5 {
+        color: #0E9E6D !important;
+        border-bottom: 2px solid #e0e0e0;
+        padding-bottom: 8px;
+        margin-bottom: 15px !important;
+    }
+    
+    /* Melhoria na exibição de selectbox e date input */
+    .stSelectbox, .stDateInput {
+        background-color: white;
+        border-radius: 8px;
+        padding: 5px;
+        box-shadow: 0 2px 5px rgba(0, 0, 0, 0.05);
     }
     </style>
     """, unsafe_allow_html=True)
     
-    # Nova definição de colunas (logo maior, sem colunas para títulos)
-    logo_col, data_inicio_col, data_fim_col, plataforma_col, botao_col = st.columns([0.8, 0.9, 0.9, 1.3, 1.5])
+    # ========== SEÇÃO SHOPIFY (LAYOUT ALINHADO EM UMA LINHA) ==========
+    # Adicionar CSS para alinhar elementos em uma linha
+    st.markdown("""
+    <style>
+    .single-line-container {
+        display: flex;
+        flex-direction: row;
+        align-items: center;
+        gap: 20px;
+        padding: 10px;
+        background-color: white;
+        border-radius: 8px;
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.05);
+        margin-bottom: 15px;
+    }
+    .logo-container {
+        flex: 0 0 140px;
+    }
+    .date-container {
+        flex: 0 0 200px;
+    }
+    .platform-container {
+        flex: 0 0 200px;
+    }
+    .button-container {
+        flex: 1;
+    }
+    </style>
+    """, unsafe_allow_html=True)
     
-    with logo_col:
-        st.markdown('<div style="background-color: white; border: 1px solid #ddd; border-radius: 8px; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1); padding: 10px; text-align: center;"><img src="https://cdn.shopify.com/shopifycloud/brochure/assets/brand-assets/shopify-logo-primary-logo-456baa801ee66a0a435671082365958316831c9960c480451dd0330bcdae304f.svg" width="130" style="margin-top: 5px;"></div>', unsafe_allow_html=True)
+    # Container para todos os elementos em linha única
+    st.markdown("""
+    <div class="single-line-container">
+        <div class="logo-container">
+            <img src="https://cdn.shopify.com/shopifycloud/brochure/assets/brand-assets/shopify-logo-primary-logo-456baa801ee66a0a435671082365958316831c9960c480451dd0330bcdae304f.svg" width="120">
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # Usando Streamlit para o restante dos controles em uma única linha
+    shopify_controls = st.columns([1, 1, 1.5, 1.5])
     
     # Gerar chaves únicas adicionando o store_id às chaves
     shopify_start_key = f"shopify_start_{store['id']}"
     shopify_end_key = f"shopify_end_{store['id']}"
     
-    # Data inicial - com tooltip
-    with data_inicio_col:
+    # Data inicial
+    with shopify_controls[0]:
+        st.write("De:")
         start_date = st.date_input(
-            "Data inicial",
+            "",
             default_start_date,
             key=shopify_start_key,
             format="DD/MM/YYYY",
-            help="Selecione a data inicial para filtrar os dados"
+            label_visibility="collapsed"
         )
     
-    # Data final - com tooltip
-    with data_fim_col:
+    # Data final
+    with shopify_controls[1]:
+        st.write("Até:")
         end_date = st.date_input(
-            "Data final",
+            "",
             default_end_date,
             key=shopify_end_key,
             format="DD/MM/YYYY",
-            help="Selecione a data final para filtrar os dados"
+            label_visibility="collapsed"
         )
     
     # Strings de data formatadas para uso nas consultas
@@ -2695,37 +2633,38 @@ def store_dashboard(store):
     # Obter categorias de URL com base nas datas selecionadas
     url_categories = get_url_categories(store["id"], start_date_str, end_date_str)
     
-    # Filtro de plataforma de anúncio - com tooltip
-    with plataforma_col:
+    # Filtro de plataforma de anúncio
+    with shopify_controls[2]:
+        st.write("Plataforma de Anúncio:")
         # Verificar se temos categorias
         shopify_cat_key = f"shopify_cat_{store['id']}"
         if url_categories and len(url_categories) > 0:
             category_options = ["Todos"] + url_categories
             selected_category = st.selectbox(
-                "Plataforma de anúncio",
+                "",
                 options=category_options,
                 index=0,
                 key=shopify_cat_key,
-                help="Selecione a plataforma de anúncios para filtrar os dados"
+                label_visibility="collapsed"
             )
         else:
             selected_category = "Todos"
             st.selectbox(
-                "Plataforma de anúncio",
+                "",
                 options=["Todos"],
                 key=shopify_cat_key,
-                help="Selecione a plataforma de anúncios para filtrar os dados"
+                label_visibility="collapsed"
             )
     
     # Botão de atualização
-    with botao_col:
+    with shopify_controls[3]:
+        st.write("&nbsp;", unsafe_allow_html=True)  # Espaçamento para alinhar com outros elementos
         # Adicionar botão de atualização
         shopify_update_key = f"shopify_update_{store['id']}"
         update_shopify_direct = st.button(
             "Atualizar Dados Shopify", 
             key=shopify_update_key,
-            use_container_width=True,
-            help="Clique para atualizar os dados da Shopify para o período selecionado"
+            use_container_width=True
         )
         
     # Flag para atualizar dados
@@ -2763,8 +2702,16 @@ def store_dashboard(store):
     shopify_data = pd.read_sql_query(query, conn)
     conn.close()
 
-    # Exibir métricas resumidas com cards customizados
-    if not shopify_data.empty:
+    # Mostrar mensagem de "não há dados" logo abaixo do logo se não houver dados
+    if shopify_data.empty:
+        st.markdown('<div class="info-box">Não há dados disponíveis para o intervalo selecionado</div>', unsafe_allow_html=True)
+        # Exibir zeros se não houver dados para o filtro selecionado
+        col1, col2 = st.columns(2)
+        with col1:
+            st.metric("Pedidos", "0")
+        with col2:
+            st.metric("Valor Total", "$0.00")
+    else:
         # Aplicar filtro de categoria antes de calcular métricas
         filtered_data = shopify_data
         if selected_category != "Todos" and 'product_url' in shopify_data.columns:
@@ -2786,210 +2733,85 @@ def store_dashboard(store):
         if 'total_value' in filtered_data.columns:
             total_value = filtered_data["total_value"].sum()
         
-        # Display metrics em dois cards customizados lado a lado
+        # Display metrics in two columns
         col1, col2 = st.columns(2)
         
         with col1:
-            custom_metric_card("Pedidos", str(total_orders))
+            st.metric("Pedidos", f"{total_orders}")
             
         with col2:
             # Formatação de moeda adequada com separadores de milhar
             formatted_value = "${:,.2f}".format(total_value)
-            custom_metric_card("Valor Total", formatted_value)
-    else:
-        # Exibir zeros se não houver dados para o filtro selecionado
-        col1, col2 = st.columns(2)
-        with col1:
-            custom_metric_card("Pedidos", "0")
-        with col2:
-            custom_metric_card("Valor Total", "$0.00")
+            st.metric("Valor Total", formatted_value)
 
     # Crie colunas para a tabela e o gráfico lado a lado
     shopify_col1, shopify_col2 = st.columns(2)
 
     with shopify_col1:
-        # Tabela de produtos Shopify - título menor
-        st.markdown('<div class="dashboard-container"><div class="section-header">Produtos Shopify</div>', unsafe_allow_html=True)
-        
-        if not shopify_data.empty:
-            # Filtrar dados por categoria de URL, se selecionado
-            filtered_data = shopify_data
-            if selected_category != "Todos" and 'product_url' in shopify_data.columns:
-                # Determinar quais URLs pertencem à categoria selecionada
-                mask = filtered_data['product_url'].apply(
-                    lambda url: (
-                        ('gg' in url.split('/')[-1].lower() or 'goog' in url.split('/')[-1].lower()) if selected_category == "Google" else
-                        ('ttk' in url.split('/')[-1].lower() or 'tktk' in url.split('/')[-1].lower()) if selected_category == "TikTok" else
-                        (not any(pattern in url.split('/')[-1].lower() for pattern in ['gg', 'goog', 'ttk', 'tktk']))
-                    ) if url and '/' in url else False
-                )
-                filtered_data = filtered_data[mask]
-            
-            # Mensagem compacta
-            if not filtered_data.empty:
-                period_text = f"Mostrando {len(filtered_data)} produtos"
-                st.markdown(f'<div class="compact-info">{period_text}</div>', unsafe_allow_html=True)
-            
-                # Agrupar dados por produto
-                # Como URLs e imagens podem ser diferentes para mesmo produto, pegamos a primeira URL e imagem para cada produto
-                url_mapping = {}
-                image_mapping = {}
-                for _, row in filtered_data.iterrows():
-                    product = row['product']
-                    url = row.get('product_url', '')
-                    image = row.get('product_image_url', '')
-                    
-                    if product not in url_mapping and url:
-                        url_mapping[product] = url
-                        
-                    if product not in image_mapping and image:
-                        image_mapping[product] = image
-                
-                # Verificar se a coluna total_value existe
-                if 'total_value' in filtered_data.columns:
-                    product_data = filtered_data.groupby(['product']).agg({
-                        'total_orders': 'sum',
-                        'total_value': 'sum'
-                    }).reset_index()
-                    
-                    # Adicionar coluna formatada para exibição
-                    product_data['valor_formatado'] = product_data['total_value'].apply(lambda x: "${:,.2f}".format(x))
-                else:
-                    product_data = filtered_data.groupby(['product']).agg({
-                        'total_orders': 'sum'
-                    }).reset_index()
-                    product_data['valor_formatado'] = "$0.00"  # Adicionar coluna vazia se não existir
-                
-                # Adicionar coluna de URL e imagem
-                product_data['url'] = product_data['product'].map(url_mapping)
-                product_data['image'] = product_data['product'].map(image_mapping)
-                
-                # Selecionar apenas as colunas que queremos exibir (removendo total_value que é redundante)
-                display_df = product_data[['image', 'product', 'total_orders', 'valor_formatado', 'url']]
-                
-                st.dataframe(
-                    display_df,
-                    column_config={
-                        "image": st.column_config.ImageColumn("Imagem", help="Imagem do produto"),
-                        "product": "Produto",
-                        "total_orders": "Total de Pedidos",
-                        "valor_formatado": "Valor Total",
-                        "url": "URL do Produto"
-                    },
-                    hide_index=True,
-                    use_container_width=True
-                )
-            else:
-                st.markdown('<div class="compact-info">Sem dados para o filtro selecionado</div>', unsafe_allow_html=True)
-        else:
-            st.markdown('<div class="compact-info">Sem dados disponíveis</div>', unsafe_allow_html=True)
-        
-        st.markdown('</div>', unsafe_allow_html=True)
+        # Tabela de produtos
+        display_shopify_data(shopify_data, selected_category)
 
     with shopify_col2:
-        # Gráfico de Shopify - título menor
-        st.markdown('<div class="dashboard-container"><div class="section-header">Gráfico de Vendas Shopify</div>', unsafe_allow_html=True)
-        
-        if not shopify_data.empty:
-            # Filtrar dados por categoria, se selecionado
-            filtered_data = shopify_data
-            if selected_category != "Todos" and 'product_url' in shopify_data.columns:
-                # Determinar quais URLs pertencem à categoria selecionada
-                mask = filtered_data['product_url'].apply(
-                    lambda url: (
-                        ('gg' in url.split('/')[-1].lower() or 'goog' in url.split('/')[-1].lower()) if selected_category == "Google" else
-                        ('ttk' in url.split('/')[-1].lower() or 'tktk' in url.split('/')[-1].lower()) if selected_category == "TikTok" else
-                        (not any(pattern in url.split('/')[-1].lower() for pattern in ['gg', 'goog', 'ttk', 'tktk']))
-                    ) if url and '/' in url else False
-                )
-                filtered_data = filtered_data[mask]
-            
-            if not filtered_data.empty:
-                # Agrupar por produto e calcular total de pedidos
-                product_data = filtered_data.groupby(['product']).agg({
-                    'total_orders': 'sum'
-                }).reset_index()
-                
-                # Ordenar por número de pedidos para melhor visualização
-                product_data = product_data.sort_values('total_orders', ascending=False)
-                
-                # Criar gráfico de barras usando Altair (mais interativo)
-                import altair as alt
-                
-                # Limitar a 15 produtos para melhor visualização, se houver muitos
-                if len(product_data) > 15:
-                    chart_data = product_data.head(15)
-                else:
-                    chart_data = product_data
-                
-                chart = alt.Chart(chart_data).mark_bar().encode(
-                    x=alt.X('product:N', title='Produto', sort='-y'),
-                    y=alt.Y('total_orders:Q', title='Total de Pedidos'),
-                    color=alt.Color('total_orders:Q', scale=alt.Scale(scheme='blues'), legend=None),
-                    tooltip=['product', 'total_orders']
-                ).properties(
-                    # Ajuste de tamanho para garantir que caiba no contêiner
-                    width='container',
-                    height=350,
-                    title=f'Total de Pedidos por Produto - {selected_category}'
-                ).configure_view(
-                    # Configuração adicional para evitar estouro do contêiner
-                    strokeWidth=0,
-                    continuousHeight=350,
-                    continuousWidth=300
-                ).interactive()
-                
-                st.altair_chart(chart, use_container_width=True)
-            else:
-                st.markdown('<div class="compact-info">Sem dados para visualização</div>', unsafe_allow_html=True)
-        else:
-            st.markdown('<div class="compact-info">Sem dados disponíveis para visualização</div>', unsafe_allow_html=True)
-        
-        st.markdown('</div>', unsafe_allow_html=True)
+        # Gráfico
+        display_shopify_chart(shopify_data, selected_category)
 
-    # Adicionar espaço maior entre seções Shopify e Dropi
-    st.markdown('<div class="section-separator"></div>', unsafe_allow_html=True)
+    # Fechando a seção principal Shopify
+    st.markdown('</div>', unsafe_allow_html=True)
     
-    # ========== SEÇÃO DROPI (LINHA INTEIRA) ==========
-    # Layout em linha única com logo e filtros para Dropi - sem rótulos
-    dropi_logo_col, dropi_inicio_col, dropi_fim_col, dropi_botao_col = st.columns([1, 1, 1, 2])
+    # Linha divisória entre as seções
+    st.markdown('<hr>', unsafe_allow_html=True)
     
-    with dropi_logo_col:
-        st.markdown('<div style="background-color: white; border: 1px solid #ddd; border-radius: 8px; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1); padding: 10px; text-align: center;"><img src="https://d39ru7awumhhs2.cloudfront.net/mexico/brands/1/logo/169517993216951799321rMLQGRSO8qfZSk4hhXNZPjPxX601y0WjAovHOll.png" width="130" style="margin-top: 5px;"></div>', unsafe_allow_html=True)
+    # Abrindo uma nova seção principal para Dropi
+    #st.markdown('<div class="main-section">', unsafe_allow_html=True)
+
+    # ========== SEÇÃO DROPI (LAYOUT ALINHADO EM UMA LINHA) ==========
+    # Container para todos os elementos em linha única
+    st.markdown("""
+    <div class="single-line-container">
+        <div class="logo-container">
+            <img src="https://d39ru7awumhhs2.cloudfront.net/mexico/brands/1/logo/169517993216951799321rMLQGRSO8qfZSk4hhXNZPjPxX601y0WjAovHOll.png" width="120">
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # Layout em uma única linha para os controles Dropi
+    dropi_controls = st.columns([1, 1, 3])
     
     # Gerar chaves únicas adicionando o store_id às chaves
     dropi_start_key = f"dropi_start_{store['id']}"
     dropi_end_key = f"dropi_end_{store['id']}"
     
-    # Data inicial - com tooltip
-    with dropi_inicio_col:
+    # Data inicial
+    with dropi_controls[0]:
+        st.write("De:")
         dropi_start_date = st.date_input(
-            "Data inicial",
+            "",
             default_start_date,
             key=dropi_start_key,
             format="DD/MM/YYYY",
-            help="Selecione a data inicial para filtrar os dados da Dropi"
+            label_visibility="collapsed"
         )
     
-    # Data final - com tooltip
-    with dropi_fim_col:
+    # Data final
+    with dropi_controls[1]:
+        st.write("Até:")
         dropi_end_date = st.date_input(
-            "Data final",
+            "",
             default_end_date,
             key=dropi_end_key,
             format="DD/MM/YYYY",
-            help="Selecione a data final para filtrar os dados da Dropi"
+            label_visibility="collapsed"
         )
     
-    # Botão de atualização - com tooltip
-    with dropi_botao_col:
+    # Botão de atualização
+    with dropi_controls[2]:
+        st.write("&nbsp;", unsafe_allow_html=True)  # Espaçamento para alinhar com outros elementos
         # Adicionar botão de atualização com chave única
         dropi_update_key = f"dropi_update_{store['id']}"
         update_dropi_direct = st.button(
             "Atualizar Dados Dropi", 
             key=dropi_update_key,
-            use_container_width=True,
-            help="Clique para atualizar os dados da Dropi para o período selecionado"
+            use_container_width=True
         )
         
     # Atualizar as strings de data após os inputs terem sido processados
@@ -3043,11 +2865,25 @@ def store_dashboard(store):
     dropi_data = pd.DataFrame(data, columns=columns)
     conn.close()
 
-    # Obter taxa de conversão
-    exchange_rate = get_exchange_rate(currency_from, currency_to)
+    # Mensagem quando não há dados disponíveis
+    if dropi_data.empty:
+        if dropi_start_date_str == dropi_end_date_str:
+            st.markdown(f'<div class="info-box">Não há dados disponíveis da Dropi para a data {dropi_start_date_str}.</div>', unsafe_allow_html=True)
+        else:
+            st.markdown(f'<div class="info-box">Não há dados disponíveis da Dropi para o período {dropi_start_date_str} a {dropi_end_date_str}.</div>', unsafe_allow_html=True)
+    else:
+        # Exibir informação do período logo abaixo do logo
+        if dropi_start_date_str == dropi_end_date_str:
+            period_text = f"Mostrando {len(dropi_data)} produtos para a data: {dropi_start_date_str} (Valores em {currency_to})"
+        else:
+            period_text = f"Mostrando {len(dropi_data)} produtos para o período: {dropi_start_date_str} a {dropi_end_date_str} (Valores em {currency_to})"
+        
+        st.markdown(f'<div class="info-box">{period_text}</div>', unsafe_allow_html=True)
 
-    # Converter valores monetários
-    if not dropi_data.empty:
+        # Obter taxa de conversão
+        exchange_rate = get_exchange_rate(currency_from, currency_to)
+
+        # Converter valores monetários
         for col in ['orders_value', 'transit_value', 'delivered_value', 'profits']:
             if col in dropi_data.columns:
                 dropi_data[col] = dropi_data[col] * exchange_rate
@@ -3061,33 +2897,28 @@ def store_dashboard(store):
         total_delivered_value = dropi_data["delivered_value"].sum()
         total_profits = dropi_data["profits"].sum()
         
-        # Display metrics com cards customizados em três colunas
+        # Display metrics in three columns with Dropi-specific styling
+        st.markdown('<div class="dropi-metrics">', unsafe_allow_html=True)
         col1, col2, col3 = st.columns(3)
         
         with col1:
-            custom_metric_card("Pedidos", str(total_orders), f"{currency_to} {total_orders_value:,.2f}")
+            st.metric("Pedidos", f"{total_orders}", f"{currency_to} {total_orders_value:,.2f}")
             
         with col2:
-            custom_metric_card("Em Trânsito", str(total_transit), f"{currency_to} {total_transit_value:,.2f}")
+            st.metric("Em Trânsito", f"{total_transit}", f"{currency_to} {total_transit_value:,.2f}")
             
         with col3:
-            custom_metric_card("Entregues", str(total_delivered), f"{currency_to} {total_delivered_value:,.2f}")
+            st.metric("Entregues", f"{total_delivered}", f"{currency_to} {total_delivered_value:,.2f}")
+        
+        st.markdown('</div>', unsafe_allow_html=True)
 
     # Crie colunas para a tabela e o gráfico lado a lado
     dropi_col1, dropi_col2 = st.columns(2)
 
     with dropi_col1:
-        # Tabela de produtos Dropi - título menor
-        st.markdown('<div class="dashboard-container"><div class="section-header">Produtos Dropi</div>', unsafe_allow_html=True)
-        
+        # Exibir tabela de produtos Dropi
         if not dropi_data.empty:
-            # Exibir tabela com todos os dados e uma mensagem de confirmação do período
-            if dropi_start_date_str == dropi_end_date_str:
-                period_text = f"{len(dropi_data)} produtos • {dropi_start_date_str} • Valores em {currency_to}"
-            else:
-                period_text = f"{len(dropi_data)} produtos • {dropi_start_date_str} a {dropi_end_date_str} • Valores em {currency_to}"
-            
-            st.markdown(f'<div class="compact-info">{period_text}</div>', unsafe_allow_html=True)
+            st.subheader("Produtos Dropi")
             
             # Primeiro, criar uma cópia do DataFrame sem a coluna 'date'
             display_df = dropi_data.drop(columns=['date'], errors='ignore')
@@ -3119,19 +2950,9 @@ def store_dashboard(store):
                 },
                 use_container_width=True
             )
-        else:
-            # Mensagem compacta para sem dados
-            if dropi_start_date_str == dropi_end_date_str:
-                st.markdown(f'<div class="compact-info">Sem dados para {dropi_start_date_str}</div>', unsafe_allow_html=True)
-            else:
-                st.markdown(f'<div class="compact-info">Sem dados para o período {dropi_start_date_str} a {dropi_end_date_str}</div>', unsafe_allow_html=True)
-        
-        st.markdown('</div>', unsafe_allow_html=True)
 
     with dropi_col2:
-        # Gráfico de Dropi - título menor
-        st.markdown('<div class="dashboard-container"><div class="section-header">Gráfico de Produtos Dropi</div>', unsafe_allow_html=True)
-        
+        # Exibir gráfico interativo para os dados Dropi
         if not dropi_data.empty:
             # Preparar dados para gráfico
             chart_data = dropi_data[['product', 'orders_count', 'transit_count', 'delivered_count']].copy()
@@ -3139,6 +2960,7 @@ def store_dashboard(store):
             # Ordenar por número de pedidos para melhor visualização
             chart_data = chart_data.sort_values('orders_count', ascending=False)
             
+            st.subheader("Gráfico de Produtos Dropi")
             # Criar gráfico interativo usando Altair
             import altair as alt
             
@@ -3174,30 +2996,27 @@ def store_dashboard(store):
                 order=alt.Order('status:N', sort='ascending'),
                 tooltip=['product', 'status', 'quantidade']
             ).properties(
-                # Ajuste de tamanho para garantir que caiba no contêiner
                 width='container',
-                height=350,
+                height=500,
                 title='Status por Produto'
-            ).configure_view(
-                # Configuração adicional para evitar estouro do contêiner
-                strokeWidth=0,
-                continuousHeight=350,
-                continuousWidth=300
             ).interactive()
             
             st.altair_chart(chart, use_container_width=True)
-        else:
-            st.markdown('<div class="compact-info">Sem dados disponíveis para visualização</div>', unsafe_allow_html=True)
-        
-        st.markdown('</div>', unsafe_allow_html=True)
+
+    # Fechando a seção principal Dropi
+    st.markdown('</div>', unsafe_allow_html=True)
     
     # ========== SEÇÃO DE EFETIVIDADE (Parte de Dropi) ==========
-    # Título sem barra verde
-    st.markdown('<div style="font-size: 14px; font-weight: 600; margin-top: 30px; margin-bottom: 10px;">ANÁLISE DE EFETIVIDADE</div>', unsafe_allow_html=True)
+    st.markdown('<hr>', unsafe_allow_html=True)
+    
+    # Abrindo nova seção para análise de efetividade
+    #st.markdown('<div class="main-section">', unsafe_allow_html=True)
+    st.markdown('<h4>ANÁLISE DE EFETIVIDADE</h4>', unsafe_allow_html=True)
 
-    # Envolver a tabela de efetividade em um div com ID para esconder mensagens informativas
-    st.markdown('<div id="effectiveness-section" class="dashboard-container">', unsafe_allow_html=True)
+    # Exibir tabela de efetividade para o intervalo selecionado
     display_effectiveness_table(store["id"], dropi_start_date_str, dropi_end_date_str)
+    
+    # Fechando a seção de análise de efetividade
     st.markdown('</div>', unsafe_allow_html=True)
 
 # Inicializar banco de dados
@@ -3219,5 +3038,4 @@ if selected_store:
     store_dashboard(selected_store)
 else:
     # Tela inicial quando nenhuma loja está selecionada
-    st.title("Bem-vindo ao Dashboard Shopify + Dropi")
     st.write("Selecione uma loja no menu lateral ou cadastre uma nova para começar.")
