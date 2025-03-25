@@ -646,15 +646,15 @@ def setup_selenium(headless=True):
         st.error(f"Erro ao inicializar o navegador: {str(e)}")
         return None
 
-def login(driver, email, password, logger):
+def login(driver, email, password, logger, url="https://app.dropi.mx/"):
     """Função de login super robusta."""
     try:
         # Abre o site em uma nova janela maximizada
         driver.maximize_window()
         
-        # Navega para a página de login
-        logger.info("Navegando para a página de login...")
-        driver.get("https://app.dropi.mx/")
+        # Navega para a página de login usando a URL fornecida
+        logger.info(f"Navegando para a página de login: {url}")
+        driver.get(url)
         time.sleep(5)  # Espera fixa de 5 segundos
         
         # Tira screenshot para análise
@@ -2288,7 +2288,7 @@ def update_dropi_data_silent(store, start_date, end_date):
         logger.info(f"Buscando dados Dropi para o período: {start_date_str} a {end_date_str}")
         
         # Fazer login no Dropi
-        success = login(driver, store["dropi_username"], store["dropi_password"], logger)
+        success = login(driver, store["dropi_username"], store["dropi_password"], logger, store["dropi_url"])
         
         if not success:
             driver.quit()
