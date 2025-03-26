@@ -890,7 +890,7 @@ def navigate_to_product_sold(driver, logger):
         return False
 
 def select_date_range(driver, start_date, end_date, logger):
-    """Select a specific date range in the Product Sold report."""
+    """Select a specific date range in the Product Sold report with increased robustness."""
     try:
         # Formatação das datas para exibição no formato esperado pelo Dropi (DD/MM/YYYY)
         start_date_formatted = start_date.strftime("%d/%m/%Y")
@@ -901,96 +901,331 @@ def select_date_range(driver, start_date, end_date, logger):
         # Capturar screenshot para diagnóstico
         driver.save_screenshot("before_date_select.png")
         
-        # Seletores específicos para o campo de data, baseado na captura de tela e no log
-        date_selectors = [
-            "//div[contains(@class, 'date-field') or contains(@class, 'date-picker')]",
-            "//div[@class='datepicker-toggle']",
-            "//div[contains(@class, 'datepicker')]//input",
-            "//div[contains(@class, 'daterangepicker')]",
-            "//input[contains(@class, 'form-control') and contains(@class, 'daterange')]",
+        # NOVO: Verificar se há opções pré-definidas que podemos usar em vez de selecionar datas manualmente
+        if (datetime.today() - start_date).days <= 1 and (datetime.today() - end_date).days <= 1:
+            # Tentar usar a opção "Hoy" (Hoje)
+            try:
+                hoy_elements = driver.find_elements(By.XPATH, "//div[text()='Hoy' or text()='Today']")
+                if hoy_elements:
+                    logger.info("Usando opção pré-definida 'Hoy/Today'")
+                    hoy_elements[0].click()
+                    time.sleep(3)
+                    driver.save_screenshot("selected_today.png")
+                    return True
+            except Exception as e:
+                logger.warning(f"Não foi possível usar a opção 'Hoy': {str(e)}")
+        
+        if (datetime.today() - start_date).days <= 7 and (datetime.today() - end_date).days <= 1:
+            # Tentar usar a opção "Últimos 7 días"
+            try:
+                last7_elements = driver.find_elements(By.XPATH, "//div[contains(text(), 'ltimos 7 d') or contains(text(), 'Last 7 d')]")
+                if last7_elements:
+                    logger.info("Usando opção pré-definida 'Últimos 7 días/Last 7 days'")
+                    last7_elements[0].click()
+                    time.sleep(3)
+                    driver.save_screenshot("selected_last7days.png")
+                    return True
+            except Exception as e:
+                logger.warning(f"Não foi possível usar a opção 'Últimos 7 días': {str(e)}")
+        
+        # NOVO: Tentar várias abordagens para encontrar o seletor de data
+        date_clicked = False
+        
+        # Abordagem 1: Procurar diretamente pelo input de data ou botão de calendário
+        date_picker_selectors = [
+            "//input[contains(@class, 'date') or contains(@class, 'calendar')]",
             "//button[contains(@class, 'date') or contains(@class, 'calendar')]",
-            "//div[contains(text(), '/') and (contains(@class, 'date') or contains(@class, 'calendar'))]",
-            "//*[contains(text(), 'Date Range') or contains(text(), 'Rango de fecha')]"
+            "//div[contains(@class, 'date-picker')]",
+            "//div[contains(@class, 'p-calendar')]//input",
+            "//div[contains(text(), 'Rango de fecha') or contains(text(), 'Date Range')]"
         ]
         
-        # Tentar clicar no seletor de data
-        clicked = False
-        for selector in date_selectors:
+        for selector in date_picker_selectors:
             try:
-                logger.info(f"Tentando seletor de data: {selector}")
-                try:
-                    element = WebDriverWait(driver, 10).until(EC.element_to_be_clickable((By.XPATH, selector)))
-                    driver.execute_script("arguments[0].style.border='3px solid red'", element)
-                    driver.save_screenshot("highlighted_date_field.png")
-                    logger.info(f"Elemento de data encontrado, HTML: {element.get_attribute('outerHTML')}")
-                    element.click()
-                    logger.info(f"Clicou no seletor de data: {selector}")
-                    clicked = True
+                elements = driver.find_elements(By.XPATH, selector)
+                if elements:
+                    logger.info(f"Tentando clicar no seletor de data: {selector}")
+                    elements[0].click()
+                    time.sleep(2)
+                    driver.save_screenshot("date_selector_clicked.png")
+                    date_clicked = True
                     break
-                except Exception as e:
-                    logger.warning(f"Clique direto no seletor {selector} falhou: {str(e)}")
-                    
-                # Tentar JavaScript click como alternativa
-                element = driver.find_element(By.XPATH, selector)
-                driver.execute_script("arguments[0].click();", element)
-                logger.info(f"Clicou via JavaScript no seletor de data: {selector}")
-                clicked = True
-                break
             except Exception as e:
-                logger.warning(f"Seletor {selector} falhou completamente: {str(e)}")
+                logger.warning(f"Não foi possível clicar no seletor {selector}: {str(e)}")
         
-        # Se as opções acima falharem, tentar encontrar qualquer elemento que pareça com um seletor de data
-        if not clicked:
+        # Abordagem 2: Se não conseguiu clicar, procurar qualquer elemento que tenha formato de data
+        if not date_clicked:
             try:
-                logger.info("Tentando abordagem alternativa: procurando elementos de data na página")
-                driver.save_screenshot("date_field_search.png")
-                potential_date_elements = driver.find_elements(By.XPATH, 
-                                                            "//*[contains(@class, 'date') or contains(@class, 'calendar') or contains(@class, 'picker')]")
+                # Procurar por texto que parece uma data
+                date_pattern_elements = driver.find_elements(
+                    By.XPATH, 
+                    "//*[contains(text(), '/') and string-length(text()) <= 12]"
+                )
                 
-                logger.info(f"Encontrou {len(potential_date_elements)} potenciais elementos de data")
-                for i, elem in enumerate(potential_date_elements):
-                    try:
-                        logger.info(f"Elemento {i+1}: {elem.get_attribute('outerHTML')}")
-                        driver.execute_script("arguments[0].style.border='3px solid blue'", elem)
-                        driver.save_screenshot(f"date_candidate_{i+1}.png")
-                        elem.click()
-                        logger.info(f"Clicou com sucesso no potencial elemento de data {i+1}")
-                        clicked = True
-                        break
-                    except Exception as e:
-                        logger.warning(f"Não conseguiu clicar no elemento {i+1}: {str(e)}")
-                        try:
-                            driver.execute_script("arguments[0].click();", elem)
-                            logger.info(f"Clicou via JavaScript no potencial elemento de data {i+1}")
-                            clicked = True
-                            break
-                        except:
-                            pass
+                if date_pattern_elements:
+                    logger.info(f"Tentando clicar em elemento com formato de data: {date_pattern_elements[0].text}")
+                    date_pattern_elements[0].click()
+                    time.sleep(2)
+                    driver.save_screenshot("date_pattern_clicked.png")
+                    date_clicked = True
             except Exception as e:
-                logger.error(f"Falha na abordagem alternativa para encontrar o seletor de data: {str(e)}")
+                logger.warning(f"Não foi possível clicar em elemento com formato de data: {str(e)}")
         
-        if not clicked:
-            logger.error("Não foi possível clicar no seletor de data")
+        # Abordagem 3: Tentar script JavaScript
+        if not date_clicked:
+            try:
+                logger.info("Tentando abrir calendário via JavaScript")
+                driver.execute_script("""
+                    // Procurar e clicar em elementos de calendário
+                    var dateInputs = document.querySelectorAll('input[type="date"], input.date, input.calendar, .date-picker input, .p-calendar input');
+                    if (dateInputs.length > 0) {
+                        dateInputs[0].click();
+                        return true;
+                    }
+                    
+                    // Procurar divs ou botões que possam ser calendários
+                    var dateElements = document.querySelectorAll('.date-picker, .calendar, .p-calendar, button.date, button.calendar');
+                    if (dateElements.length > 0) {
+                        dateElements[0].click();
+                        return true;
+                    }
+                    
+                    return false;
+                """)
+                time.sleep(2)
+                driver.save_screenshot("date_js_clicked.png")
+                date_clicked = True
+            except Exception as e:
+                logger.warning(f"JavaScript para clicar no calendário falhou: {str(e)}")
+        
+        if not date_clicked:
+            logger.warning("Não foi possível encontrar ou clicar no seletor de data")
             return False
         
-        # Esperar o popup do calendário aparecer
+        # Aguardar o popup do calendário aparecer
         time.sleep(3)
-        driver.save_screenshot("date_popup.png")
+        driver.save_screenshot("calendar_popup.png")
         
-        # Verificar e navegar para o mês/ano correto
-        expected_month = start_date.strftime("%B")  # Nome do mês em inglês
-        expected_year = start_date.strftime("%Y")
-        logger.info(f"Mês/ano desejado: {expected_month} {expected_year}")
+        # NOVO: Verificar mês atual e navegar para o mês correto
+        current_month_element = None
+        try:
+            month_headers = driver.find_elements(By.XPATH, 
+                "//div[contains(@class, 'p-datepicker-title') or contains(@class, 'calendar-title')]")
+            
+            if month_headers:
+                current_month_element = month_headers[0]
+                logger.info(f"Mês atual do calendário: {current_month_element.text}")
+        except:
+            logger.warning("Não foi possível determinar o mês atual do calendário")
         
-        # Funções de utilidade para verificar o mês atual e navegar
-        def get_current_month_year():
+        # NOVO: Função para comparar meses e determinar se precisa navegar
+        def compare_months(calendar_month_text, target_date):
+            # Verificar se é necessário navegar para o mês correto
             try:
-                month_year_elements = driver.find_elements(By.XPATH, "//div[contains(@class, 'p-datepicker-title') or contains(@class, 'datepicker-title')]")
-                if month_year_elements:
-                    return month_year_elements[0].text
-                return None
-            except:
-                return None
+                # Extrair mês e ano do texto do calendário
+                # Formato típico: "March 2025"
+                parts = calendar_month_text.split()
+                if len(parts) >= 2:
+                    calendar_month_name = parts[0]
+                    calendar_year = int(parts[1])
+                    
+                    # Mapear nomes de meses em inglês/espanhol para números
+                    month_map = {
+                        'January': 1, 'Enero': 1,
+                        'February': 2, 'Febrero': 2,
+                        'March': 3, 'Marzo': 3,
+                        'April': 4, 'Abril': 4,
+                        'May': 5, 'Mayo': 5,
+                        'June': 6, 'Junio': 6,
+                        'July': 7, 'Julio': 7,
+                        'August': 8, 'Agosto': 8,
+                        'September': 9, 'Septiembre': 9,
+                        'October': 10, 'Octubre': 10,
+                        'November': 11, 'Noviembre': 11,
+                        'December': 12, 'Diciembre': 12
+                    }
+                    
+                    calendar_month = None
+                    for key, value in month_map.items():
+                        if key.lower() in calendar_month_name.lower():
+                            calendar_month = value
+                            break
+                    
+                    if calendar_month:
+                        target_month = target_date.month
+                        target_year = target_date.year
+                        
+                        # Calculando a diferença em meses
+                        diff_months = (target_year - calendar_year) * 12 + (target_month - calendar_month)
+                        return diff_months
+            except Exception as e:
+                logger.warning(f"Erro ao comparar meses: {str(e)}")
+            
+            return 0  # Assumir que está no mês correto se não conseguir determinar
+        
+        # Navegar para o mês correto se necessário
+        if current_month_element:
+            month_diff = compare_months(current_month_element.text, start_date)
+            logger.info(f"Diferença de meses: {month_diff}")
+            
+            # Navegar para meses anteriores (negativo) ou posteriores (positivo)
+            if month_diff < 0:
+                # Precisa voltar meses
+                prev_btn_selector = "//span[contains(@class, 'p-datepicker-prev') or contains(@class, 'calendar-prev')]/.."
+                for _ in range(abs(month_diff)):
+                    try:
+                        prev_btn = driver.find_element(By.XPATH, prev_btn_selector)
+                        prev_btn.click()
+                        time.sleep(1)
+                        logger.info("Clicou no botão de mês anterior")
+                    except:
+                        logger.warning("Não foi possível navegar para o mês anterior")
+                        break
+            elif month_diff > 0:
+                # Precisa avançar meses
+                next_btn_selector = "//span[contains(@class, 'p-datepicker-next') or contains(@class, 'calendar-next')]/.."
+                for _ in range(month_diff):
+                    try:
+                        next_btn = driver.find_element(By.XPATH, next_btn_selector)
+                        next_btn.click()
+                        time.sleep(1)
+                        logger.info("Clicou no botão de próximo mês")
+                    except:
+                        logger.warning("Não foi possível navegar para o próximo mês")
+                        break
+        
+        driver.save_screenshot("calendar_after_navigation.png")
+        
+        # NOVO: Função melhorada para selecionar dias específicos que lida com diferentes layouts de calendário
+        def select_day(day_number):
+            # Verificar diferentes padrões de células de calendário
+            day_selectors = [
+                f"//table//td[normalize-space(text())='{day_number}' or normalize-space(.)='{day_number}']",
+                f"//table//span[normalize-space(text())='{day_number}']",
+                f"//div[contains(@class, 'calendar') or contains(@class, 'datepicker')]//td[text()='{day_number}']",
+                f"//div[contains(@class, 'calendar') or contains(@class, 'datepicker')]//span[text()='{day_number}']",
+                f"//*[contains(@class, 'day') and text()='{day_number}']"
+            ]
+            
+            for selector in day_selectors:
+                try:
+                    day_elements = driver.find_elements(By.XPATH, selector)
+                    if day_elements:
+                        # Filtrar para remover dias desabilitados
+                        valid_days = [elem for elem in day_elements if 
+                                     "disabled" not in elem.get_attribute("class") and 
+                                     "hidden" not in elem.get_attribute("class")]
+                        
+                        if valid_days:
+                            # Clicar no primeiro dia válido
+                            valid_days[0].click()
+                            logger.info(f"Selecionado dia {day_number}")
+                            time.sleep(1)
+                            return True
+                except Exception as e:
+                    logger.warning(f"Erro ao tentar selecionar dia {day_number}: {str(e)}")
+            
+            # Se todas as tentativas falharem
+            logger.warning(f"Não foi possível selecionar o dia {day_number}")
+            return False
+        
+        # Selecionar dias de início e fim
+        start_day = start_date.day
+        start_day_selected = select_day(start_day)
+        
+        # Aguardar um momento após selecionar a primeira data
+        time.sleep(2)
+        
+        # Verificar se precisamos selecionar a data final
+        # Se as datas de início e fim forem diferentes
+        if start_date != end_date:
+            end_day = end_date.day
+            end_day_selected = select_day(end_day)
+        else:
+            end_day_selected = True  # Apenas uma data foi necessária
+        
+        # NOVO: Se a seleção de dia falhar, tentar inserir diretamente como texto
+        if not start_day_selected or not end_day_selected:
+            try:
+                logger.info("Tentando inserir datas diretamente como texto")
+                
+                date_inputs = driver.find_elements(By.XPATH, "//input[contains(@class, 'date') or contains(@class, 'calendar')]")
+                if len(date_inputs) >= 1:
+                    # Inserir data de início
+                    date_inputs[0].clear()
+                    date_inputs[0].send_keys(start_date_formatted)
+                    date_inputs[0].send_keys(Keys.ENTER)
+                    logger.info(f"Inseriu data de início: {start_date_formatted}")
+                    
+                    if len(date_inputs) >= 2 and start_date != end_date:
+                        # Inserir data de fim se houver um segundo campo
+                        date_inputs[1].clear()
+                        date_inputs[1].send_keys(end_date_formatted)
+                        date_inputs[1].send_keys(Keys.ENTER)
+                        logger.info(f"Inseriu data de fim: {end_date_formatted}")
+                    
+                    start_day_selected = True
+                    end_day_selected = True
+            except Exception as e:
+                logger.warning(f"Não foi possível inserir datas como texto: {str(e)}")
+        
+        # Procurar e clicar em botões de confirmação
+        try:
+            confirm_button_selectors = [
+                "//button[contains(text(), 'Apply') or contains(text(), 'Aplicar')]",
+                "//button[contains(text(), 'OK') or contains(text(), 'Aceptar')]",
+                "//button[contains(text(), 'Done') or contains(text(), 'Listo')]",
+                "//button[contains(@class, 'confirm') or contains(@class, 'apply')]"
+            ]
+            
+            for selector in confirm_button_selectors:
+                try:
+                    confirm_buttons = driver.find_elements(By.XPATH, selector)
+                    if confirm_buttons:
+                        confirm_buttons[0].click()
+                        logger.info(f"Clicou no botão de confirmação: {confirm_buttons[0].text}")
+                        time.sleep(3)
+                        break
+                except:
+                    pass
+        except:
+            logger.info("Não encontrou botão de confirmação específico")
+        
+        # NOVO: Verificar se há um botão de "Filtrar" ou similar
+        try:
+            filter_button_selectors = [
+                "//button[contains(text(), 'Filtrar') or contains(text(), 'Filter')]",
+                "//button[contains(text(), 'Buscar') or contains(text(), 'Search')]",
+                "//button[contains(@class, 'filter') or contains(@class, 'search')]"
+            ]
+            
+            for selector in filter_button_selectors:
+                try:
+                    filter_buttons = driver.find_elements(By.XPATH, selector)
+                    if filter_buttons:
+                        filter_buttons[0].click()
+                        logger.info(f"Clicou no botão de filtro: {filter_buttons[0].text}")
+                        time.sleep(5)  # Esperar tempo extra para que os dados sejam carregados
+                        break
+                except:
+                    pass
+        except:
+            logger.info("Não encontrou botão de filtro específico")
+        
+        # Aguardar carregamento dos dados após seleção das datas
+        time.sleep(5)
+        driver.save_screenshot("after_date_selection.png")
+        
+        return start_day_selected or end_day_selected
+        
+    except Exception as e:
+        logger.error(f"Erro ao selecionar intervalo de datas: {str(e)}")
+        # Capturar screenshot em caso de erro
+        try:
+            driver.save_screenshot("date_selection_error.png")
+        except:
+            pass
+        return False
 
         def is_desired_month(current_text):
             if not current_text:
@@ -1244,14 +1479,28 @@ def select_date_range(driver, start_date, end_date, logger):
         return False
 
 def extract_product_data(driver, logger):
-    """Extract product data from the Product Sold report with improved accuracy."""
+    """Extract product data from the Product Sold report with improved robustness."""
     try:
-        logger.info("Iniciando extração de dados dos produtos com método melhorado")
-        driver.save_screenshot("product_cards.png")
+        logger.info("Iniciando extração de dados dos produtos com método aprimorado")
+        driver.save_screenshot("product_page_before_extraction.png")
         
-        # Esperar que a página carregue completamente
-        time.sleep(5)
+        # Aumentar significativamente o tempo de espera para garantir carregamento completo
+        wait_time = 10
+        logger.info(f"Aguardando {wait_time} segundos para garantir carregamento completo dos dados")
+        time.sleep(wait_time)
         
+        # Verificar se há mensagem de "sem dados" na página
+        try:
+            no_data_elements = driver.find_elements(By.XPATH, 
+                "//div[contains(text(), 'No hay datos') or contains(text(), 'Sin resultados') or contains(text(), 'No data')]")
+            
+            if no_data_elements:
+                logger.info(f"Detectada mensagem de 'sem dados': {no_data_elements[0].text}")
+                driver.save_screenshot("no_data_found.png")
+                return []
+        except:
+            pass
+            
         products_data = []
         
         # Lista de textos a ignorar (cabeçalhos, títulos, etc)
@@ -1262,18 +1511,86 @@ def extract_product_data(driver, logger):
             "Productos en transito",
             "Resumen",
             "Total",
-            "Filtrar"
+            "Filtrar",
+            "Rango de fecha",
+            "Date Range"
         ]
         
-        # Localizar todos os cards de produtos usando um seletor mais específico
-        product_cards = driver.find_elements(By.XPATH, "//div[contains(@class, 'card') or contains(@class, 'product-card') or contains(@class, 'item')]")
+        # NOVO: Usar múltiplos seletores para aumentar a chance de encontrar os cards
+        product_card_selectors = [
+            # Seletor mais específico para cards com classes relacionadas a produtos
+            "//div[contains(@class, 'product-item') or contains(@class, 'product-card')]",
+            # Seletor para cards que contêm informações típicas de produtos
+            "//div[.//div[contains(text(), 'Stock:') or contains(text(), 'Proveedor:')]]",
+            # Seletor para cards que contêm imagens de produtos seguido de informações
+            "//div[.//img]/following-sibling::div",
+            # Seletor menos específico para qualquer card que possa conter produtos
+            "//div[contains(@class, 'card') and not(contains(@class, 'header')) and not(contains(@class, 'filter'))]",
+            # Seletor para linhas ou cards em uma tabela de produtos
+            "//table//tr[position() > 1]",
+            # Seletor extremamente específico para o padrão de produto Dropi
+            "//div[.//div[contains(@class, 'product-name')] and .//div[contains(@class, 'product-stats')]]"
+        ]
         
-        logger.info(f"Encontrados {len(product_cards)} cards de produtos")
+        # Tentar cada seletor até encontrar cards de produtos
+        product_cards = []
+        for selector in product_card_selectors:
+            try:
+                logger.info(f"Tentando seletor: {selector}")
+                cards = driver.find_elements(By.XPATH, selector)
+                
+                if cards and len(cards) > 0:
+                    # Verificar se parece um card de produto válido
+                    for card in cards:
+                        card_text = card.text.strip()
+                        # Verificar comprimento mínimo e presença de termos relacionados a produtos
+                        if (len(card_text) > 30 and 
+                            ("Stock" in card_text or "Proveedor" in card_text or 
+                             "ordenes" in card_text or "productos" in card_text)):
+                            product_cards.append(card)
+                
+                if len(product_cards) > 0:
+                    logger.info(f"Encontrados {len(product_cards)} cards de produtos usando o seletor: {selector}")
+                    break
+            except Exception as e:
+                logger.warning(f"Erro ao usar o seletor {selector}: {str(e)}")
         
-        if not product_cards or len(product_cards) < 1:
-            # Método alternativo: tentar localizar pelo container de imagem que geralmente precede os dados
-            product_cards = driver.find_elements(By.XPATH, "//div[.//img]/following-sibling::div[1]")
-            logger.info(f"Método alternativo: Encontrados {len(product_cards)} cards via containers de imagem")
+        # Se não encontrou cards com seletores específicos, tentar capturar elementos genéricos
+        if not product_cards:
+            logger.info("Tentando método alternativo para identificar produtos")
+            try:
+                # Primeiro, pegar todos os elementos div que têm tamanho razoável
+                all_divs = driver.find_elements(By.XPATH, "//div[string-length(text()) > 50]")
+                logger.info(f"Encontrados {len(all_divs)} divs com conteúdo substancial")
+                
+                # Filtrar apenas os que tem indicações de ser um produto
+                potential_products = []
+                for div in all_divs:
+                    text = div.text
+                    if ("Stock:" in text or "Proveedor:" in text) and not any(ignore in text for ignore in ignore_texts):
+                        potential_products.append(div)
+                
+                if potential_products:
+                    logger.info(f"Identificados {len(potential_products)} potenciais produtos via método alternativo")
+                    product_cards = potential_products
+            except Exception as e:
+                logger.warning(f"Método alternativo também falhou: {str(e)}")
+        
+        # NOVO: Verificação final para determinar se realmente temos produtos
+        if not product_cards:
+            logger.warning("Nenhum card de produto encontrado na página")
+            
+            # Capturar HTML da página para análise posterior
+            page_source = driver.page_source
+            with open("page_source_no_products.html", "w", encoding="utf-8") as f:
+                f.write(page_source)
+            
+            # Capturar screenshot final
+            driver.save_screenshot("no_products_found.png")
+            return []
+        
+        logger.info(f"Processando {len(product_cards)} cards de produtos encontrados")
+        driver.save_screenshot("products_found.png")
         
         # Processar cada card de produto individualmente
         for i, card in enumerate(product_cards):
@@ -1281,72 +1598,69 @@ def extract_product_data(driver, logger):
                 # Verificar se este é realmente um card de produto válido
                 card_text = card.text
                 
+                # Para debug: salvar o texto do card
+                logger.info(f"Card #{i+1} texto completo:\n{card_text}")
+                
                 # Ignorar cards vazios ou inválidos
                 if not card_text or len(card_text) < 20:
+                    logger.info(f"Ignorando card #{i+1}: texto muito curto ou vazio")
                     continue
                 
-                # Para debug
-                logger.info(f"Processando card #{i+1}:\n{card_text[:100]}...")
+                # Verificar se não é um cabeçalho ou outro elemento não-produto
+                if any(ignore_text.lower() in card_text.lower() for ignore_text in ignore_texts):
+                    logger.info(f"Ignorando card #{i+1}: contém texto de cabeçalho/título")
+                    continue
                 
-                # Tentar extrair a imagem do produto - procurando um elemento img no card ou no elemento anterior
-                image_url = ""
-                try:
-                    # Primeiro tenta encontrar imagem dentro do card atual
-                    img_elements = card.find_elements(By.XPATH, ".//img")
-                    if img_elements:
-                        image_url = img_elements[0].get_attribute("src")
-                        logger.info(f"Imagem encontrada no card: {image_url}")
-                    else:
-                        # Se não encontrar, tenta em elementos próximos
-                        try:
-                            # Tenta elemento pai que pode conter a imagem
-                            parent = card.find_element(By.XPATH, "..")
-                            img_elements = parent.find_elements(By.XPATH, ".//img")
-                            if img_elements:
-                                image_url = img_elements[0].get_attribute("src")
-                                logger.info(f"Imagem encontrada no pai: {image_url}")
-                        except:
-                            pass
-                            
-                        # Tenta elemento anterior que pode conter a imagem
-                        try:
-                            # Usando JavaScript para acessar o elemento irmão anterior
-                            sibling_img = driver.execute_script("""
-                                var el = arguments[0];
-                                var sibling = el.previousElementSibling;
-                                return sibling ? sibling.querySelector('img') : null;
-                            """, card)
-                            
-                            if sibling_img:
-                                image_url = sibling_img.get_attribute("src")
-                                logger.info(f"Imagem encontrada no irmão anterior via JS: {image_url}")
-                        except Exception as e:
-                            logger.warning(f"Erro ao tentar encontrar imagem no elemento adjacente: {str(e)}")
-                except Exception as e:
-                    logger.warning(f"Erro ao buscar imagem para o produto: {str(e)}")
+                # Verificações adicionais para validar que é um produto real
+                if "Stock:" not in card_text and "Proveedor:" not in card_text:
+                    logger.info(f"Ignorando card #{i+1}: não contém informações de produto")
+                    continue
                 
                 # Extrair nome do produto (geralmente o primeiro texto substancial no card)
                 lines = card_text.split('\n')
                 if not lines:
                     continue
                     
-                product_name = lines[0]
+                # Procurar nome do produto (pode não ser a primeira linha se houver cabeçalhos)
+                product_name = ""
+                for line in lines:
+                    if line and len(line) > 3 and not any(ignore_text.lower() in line.lower() for ignore_text in ignore_texts):
+                        product_name = line.strip()
+                        break
                 
-                # Verificar se o nome do produto não é um dos textos a ignorar
-                if any(ignore_text.lower() in product_name.lower() for ignore_text in ignore_texts):
-                    logger.info(f"Ignorando texto '{product_name}' por ser um cabeçalho ou título")
+                if not product_name:
+                    logger.info(f"Ignorando card #{i+1}: não foi possível identificar o nome do produto")
                     continue
                 
-                # Verificações adicionais para validar que é um produto real
-                # 1. Deve ter pelo menos alguns caracteres no nome
-                if len(product_name) < 5:
-                    logger.info(f"Ignorando '{product_name}': nome muito curto")
-                    continue
+                # Debug
+                logger.info(f"Processando produto: '{product_name}'")
+                
+                # Tentar extrair a imagem do produto
+                image_url = ""
+                try:
+                    img_elements = driver.execute_script("""
+                        var card = arguments[0];
+                        // Procurar no card atual e elementos próximos
+                        var imgs = [];
+                        // 1. No próprio card
+                        Array.from(card.querySelectorAll('img')).forEach(img => imgs.push(img));
+                        // 2. No elemento pai
+                        if (card.parentElement) {
+                            Array.from(card.parentElement.querySelectorAll('img')).forEach(img => imgs.push(img));
+                        }
+                        // 3. Nos elementos irmãos anteriores
+                        var sibling = card.previousElementSibling;
+                        while(sibling) {
+                            Array.from(sibling.querySelectorAll('img')).forEach(img => imgs.push(img));
+                            sibling = sibling.previousElementSibling;
+                        }
+                        return imgs.length > 0 ? imgs[0].src : '';
+                    """, card)
                     
-                # 2. Deve ter palavras "Stock" ou "Proveedor" no card
-                if "Stock:" not in card_text and "Proveedor:" not in card_text:
-                    logger.info(f"Ignorando '{product_name}': não contém informações de produto")
-                    continue
+                    if image_url:
+                        logger.info(f"Imagem encontrada: {image_url}")
+                except Exception as e:
+                    logger.warning(f"Erro ao extrair imagem: {str(e)}")
                 
                 # Inicializar dados do produto
                 product_data = {
@@ -1360,100 +1674,147 @@ def extract_product_data(driver, logger):
                     "delivered_count": 0,
                     "delivered_value": 0.0,
                     "profits": 0.0,
-                    "image_url": image_url  # Adicionando URL da imagem
+                    "image_url": image_url
                 }
                 
-                # Extrair informações específicas deste card apenas
-                # Tentar extrair o fornecedor diretamente deste card
-                try:
-                    provider_element = card.find_element(By.XPATH, ".//div[contains(text(), 'Proveedor:')]")
-                    provider_text = provider_element.text
-                    if "Proveedor:" in provider_text:
-                        product_data["provider"] = provider_text.split("Proveedor:")[1].strip()
-                except:
-                    # Tentar método alternativo com regex no texto completo
-                    provider_match = re.search(r'Proveedor:\s*([^\n]+)', card_text)
-                    if provider_match:
-                        product_data["provider"] = provider_match.group(1).strip()
+                # MELHORADO: Extração de dados usando regex
+                # Fornecedor
+                provider_pattern = r'Proveedor:[\s]*([^\n]+)'
+                provider_match = re.search(provider_pattern, card_text, re.IGNORECASE)
+                if provider_match:
+                    product_data["provider"] = provider_match.group(1).strip()
                 
-                # Extrair estoque diretamente deste card
-                try:
-                    stock_element = card.find_element(By.XPATH, ".//div[contains(text(), 'Stock:')]")
-                    stock_text = stock_element.text
-                    stock_match = re.search(r'Stock:\s*(\d+)', stock_text)
-                    if stock_match:
-                        product_data["stock"] = int(stock_match.group(1))
-                except:
-                    # Método alternativo com regex
-                    stock_match = re.search(r'Stock:\s*(\d+)', card_text)
-                    if stock_match:
-                        product_data["stock"] = int(stock_match.group(1))
+                # Estoque
+                stock_pattern = r'Stock:[\s]*(\d+)'
+                stock_match = re.search(stock_pattern, card_text, re.IGNORECASE)
+                if stock_match:
+                    product_data["stock"] = int(stock_match.group(1))
                 
-                # Extrair vendidos (ordens)
-                orders_match = re.search(r'(\d+)\s+ordenes', card_text)
-                if orders_match:
-                    product_data["orders_count"] = int(orders_match.group(1))
+                # Pedidos - busca por múltiplos padrões
+                orders_patterns = [
+                    r'(\d+)[\s]*ordenes',
+                    r'Orders:[\s]*(\d+)',
+                    r'Pedidos:[\s]*(\d+)'
+                ]
+                
+                for pattern in orders_patterns:
+                    orders_match = re.search(pattern, card_text, re.IGNORECASE)
+                    if orders_match:
+                        product_data["orders_count"] = int(orders_match.group(1))
+                        break
+                
+                # Valor de pedidos - busca múltiplos padrões
+                if product_data["orders_count"] > 0:
+                    orders_value_patterns = [
+                        r'ordenes[\s\n]*\$[\s]*([\d.,]+)',
+                        r'Orders[\s\n]*\$[\s]*([\d.,]+)',
+                        r'Pedidos[\s\n]*\$[\s]*([\d.,]+)',
+                        r'\$[\s]*([\d.,]+)[\s\n]*[Oo]rdenes'
+                    ]
                     
-                    # Buscar o valor das ordens (geralmente na linha seguinte)
-                    orders_value_match = re.search(r'ordenes\s*\n\s*\$\s*([\d.,]+)', card_text)
-                    if orders_value_match:
-                        value_str = orders_value_match.group(1).replace('.', '').replace(',', '.')
-                        try:
-                            product_data["orders_value"] = float(value_str)
-                        except:
-                            pass
+                    for pattern in orders_value_patterns:
+                        value_match = re.search(pattern, card_text, re.IGNORECASE)
+                        if value_match:
+                            value_str = value_match.group(1).replace(',', '').replace('.', '')
+                            # Considerar dois dígitos do final como centavos
+                            try:
+                                value = float(value_str) / 100
+                                product_data["orders_value"] = value
+                                break
+                            except:
+                                logger.warning(f"Não foi possível converter valor: {value_str}")
                 
-                # Extrair em trânsito
-                transit_match = re.search(r'(\d+)\s+productos\s*\n\s*En\s+transito', card_text, re.IGNORECASE) or \
-                               re.search(r'En\s+transito\s*\n\s*(\d+)\s+productos', card_text, re.IGNORECASE)
+                # Em trânsito - múltiplos padrões
+                transit_patterns = [
+                    r'(\d+)[\s]*productos[\s\n]*[Ee]n[\s]*[Tt]ransito',
+                    r'[Ee]n[\s]*[Tt]ransito[\s\n]*(\d+)[\s]*productos',
+                    r'[Tt]ransit:[\s]*(\d+)',
+                    r'[Ee]n[\s]*[Tt]ransporte:[\s]*(\d+)'
+                ]
                 
-                if transit_match:
-                    product_data["transit_count"] = int(transit_match.group(1))
+                for pattern in transit_patterns:
+                    transit_match = re.search(pattern, card_text, re.IGNORECASE)
+                    if transit_match:
+                        product_data["transit_count"] = int(transit_match.group(1))
+                        break
+                
+                # Valor em trânsito - múltiplos padrões
+                if product_data["transit_count"] > 0:
+                    transit_value_patterns = [
+                        r'[Tt]ransito[\s\n]*[\s\S]{0,20}\$[\s]*([\d.,]+)',
+                        r'[Tt]ransit[\s\n]*[\s\S]{0,20}\$[\s]*([\d.,]+)'
+                    ]
                     
-                    # Buscar o valor em trânsito
-                    transit_value_match = re.search(r'En\s+transito\s*\n.*\n\s*\$\s*([\d.,]+)', card_text, re.IGNORECASE)
-                    if transit_value_match:
-                        value_str = transit_value_match.group(1).replace('.', '').replace(',', '.')
-                        try:
-                            product_data["transit_value"] = float(value_str)
-                        except:
-                            pass
+                    for pattern in transit_value_patterns:
+                        value_match = re.search(pattern, card_text, re.IGNORECASE)
+                        if value_match:
+                            value_str = value_match.group(1).replace(',', '').replace('.', '')
+                            try:
+                                value = float(value_str) / 100
+                                product_data["transit_value"] = value
+                                break
+                            except:
+                                logger.warning(f"Não foi possível converter valor de trânsito: {value_str}")
                 
-                # Extrair entregados
-                delivered_match = re.search(r'(\d+)\s+productos\s*\n\s*Entregados', card_text, re.IGNORECASE) or \
-                                 re.search(r'Entregados\s*\n\s*(\d+)\s+productos', card_text, re.IGNORECASE)
+                # Entregados - múltiplos padrões
+                delivered_patterns = [
+                    r'(\d+)[\s]*productos[\s\n]*[Ee]ntregados',
+                    r'[Ee]ntregados[\s\n]*(\d+)[\s]*productos',
+                    r'[Dd]elivered:[\s]*(\d+)',
+                    r'[Ee]ntregues:[\s]*(\d+)'
+                ]
                 
-                if delivered_match:
-                    product_data["delivered_count"] = int(delivered_match.group(1))
+                for pattern in delivered_patterns:
+                    delivered_match = re.search(pattern, card_text, re.IGNORECASE)
+                    if delivered_match:
+                        product_data["delivered_count"] = int(delivered_match.group(1))
+                        break
+                
+                # Valor entregados - múltiplos padrões
+                if product_data["delivered_count"] > 0:
+                    delivered_value_patterns = [
+                        r'[Ee]ntregados[\s\n]*[\s\S]{0,20}\$[\s]*([\d.,]+)',
+                        r'[Dd]elivered[\s\n]*[\s\S]{0,20}\$[\s]*([\d.,]+)'
+                    ]
                     
-                    # Buscar o valor entregados
-                    delivered_value_match = re.search(r'Entregados\s*\n.*\n\s*\$\s*([\d.,]+)', card_text, re.IGNORECASE)
-                    if delivered_value_match:
-                        value_str = delivered_value_match.group(1).replace('.', '').replace(',', '.')
+                    for pattern in delivered_value_patterns:
+                        value_match = re.search(pattern, card_text, re.IGNORECASE)
+                        if value_match:
+                            value_str = value_match.group(1).replace(',', '').replace('.', '')
+                            try:
+                                value = float(value_str) / 100
+                                product_data["delivered_value"] = value
+                                break
+                            except:
+                                logger.warning(f"Não foi possível converter valor entregado: {value_str}")
+                
+                # Ganâncias/Lucros - múltiplos padrões
+                profits_patterns = [
+                    r'[Gg]anancias[\s\n]*\$[\s]*([\d.,]+)',
+                    r'[Pp]rofits[\s\n]*\$[\s]*([\d.,]+)',
+                    r'[Ll]ucros?[\s\n]*\$[\s]*([\d.,]+)'
+                ]
+                
+                for pattern in profits_patterns:
+                    profits_match = re.search(pattern, card_text, re.IGNORECASE)
+                    if profits_match:
+                        value_str = profits_match.group(1).replace(',', '').replace('.', '')
                         try:
-                            product_data["delivered_value"] = float(value_str)
+                            value = float(value_str) / 100
+                            product_data["profits"] = value
+                            break
                         except:
-                            pass
+                            logger.warning(f"Não foi possível converter valor de lucro: {value_str}")
                 
-                # Extrair ganâncias
-                profits_match = re.search(r'Ganancias\s*\n\s*\$\s*([\d.,]+)', card_text, re.IGNORECASE)
-                if profits_match:
-                    value_str = profits_match.group(1).replace('.', '').replace(',', '.')
-                    try:
-                        product_data["profits"] = float(value_str)
-                    except:
-                        pass
-                
-                # Verificação final mais rigorosa - produto real deve ter pelo menos duas métricas válidas
+                # NOVO: Uma verificação menos rigorosa - aceita qualquer produto com pelo menos um valor
                 valid_metrics_count = sum([
-                    product_data["stock"] > 0,
                     product_data["orders_count"] > 0,
                     product_data["transit_count"] > 0,
                     product_data["delivered_count"] > 0,
-                    product_data["profits"] > 0
+                    product_data["stock"] > 0
                 ])
                 
-                if valid_metrics_count >= 1:
+                if valid_metrics_count >= 1 or len(product_data["provider"]) > 0:
                     products_data.append(product_data)
                     logger.info(f"Produto '{product_name}' processado com sucesso")
                 else:
@@ -1461,12 +1822,18 @@ def extract_product_data(driver, logger):
                 
             except Exception as e:
                 logger.error(f"Erro ao processar card #{i+1}: {str(e)}")
+                # Continuar processando os outros cards
         
         logger.info(f"Total de {len(products_data)} produtos extraídos com sucesso")
         return products_data
         
     except Exception as e:
         logger.error(f"Erro geral ao extrair dados dos produtos: {str(e)}")
+        # Capturar screenshot em caso de erro
+        try:
+            driver.save_screenshot("error_extracting_products.png")
+        except:
+            pass
         return []
 
 def save_dropi_metrics_to_db(store_id, date_str, products_data, start_date_str=None, end_date_str=None):
@@ -2270,78 +2637,144 @@ def display_effectiveness_table(store_id, start_date_str, end_date_str):
         pass  # Não exibe nenhuma mensagem quando não há dados
         
 def update_dropi_data_silent(store, start_date, end_date):
-    """Atualiza os dados da Dropi sem exibir feedback de progresso."""
+    """Atualiza os dados da Dropi com retry automático e tratamento robusto de erros."""
     # Configurar o driver Selenium
-    driver = setup_selenium(headless=True)
+    driver = None
+    max_retries = 3
+    retry_count = 0
+    success = False
     
-    if not driver:
-        return False
-    
-    try:
-        # Converter datas para strings
-        start_date_str = start_date.strftime("%Y-%m-%d")
-        end_date_str = end_date.strftime("%Y-%m-%d")
-        
-        # Data de referência é a mesma da final (mantido para compatibilidade)
-        date_str = end_date_str
-        
-        logger.info(f"Buscando dados Dropi para o período: {start_date_str} a {end_date_str}")
-        
-        # Fazer login no Dropi
-        success = login(driver, store["dropi_username"], store["dropi_password"], logger, store["dropi_url"])
-        
-        if not success:
-            driver.quit()
-            return False
-        
-        # Navegar para o relatório de produtos vendidos
-        if not navigate_to_product_sold(driver, logger):
-            driver.quit()
-            return False
-        
-        # Selecionar intervalo de datas específicas
-        if not select_date_range(driver, start_date, end_date, logger):
-            driver.quit()
-            return False
-        
-        # Extrair dados dos produtos
-        product_data = extract_product_data(driver, logger)
-        
-        if not product_data:
-            driver.quit()
-            return False
-        
-        # Limpar dados antigos e salvar os novos - agora com datas inicial e final
-        save_dropi_metrics_to_db(store["id"], date_str, product_data, start_date_str, end_date_str)
-        
-        # Verificar após salvar (depuração)
+    while retry_count < max_retries and not success:
         try:
-            from db_utils import execute_query
-            result = execute_query(
-                """
-                SELECT COUNT(*) FROM dropi_metrics 
-                WHERE store_id = ? 
-                  AND date_start = ? 
-                  AND date_end = ?
-                """, 
-                (store["id"], start_date_str, end_date_str),
-                fetch_type='one'
-            )
-            count = result[0] if result else 0
-            logger.info(f"Verificação: {count} produtos salvos no banco para o período {start_date_str} a {end_date_str}")
-        except Exception as e:
-            logger.error(f"Erro na verificação de contagem: {str(e)}")
-        
-        driver.quit()
-        return True
+            retry_count += 1
+            logger.info(f"Tentativa #{retry_count} de atualizar dados Dropi")
             
-    except Exception as e:
-        logger.error(f"Erro ao atualizar dados da Dropi: {str(e)}")
-        try:
+            # Configurar o driver com cada tentativa
+            driver = setup_selenium(headless=True)
+            
+            if not driver:
+                logger.error("Falha ao inicializar o driver Selenium")
+                time.sleep(2)  # Esperar um pouco antes de tentar novamente
+                continue
+            
+            # Converter datas para strings
+            start_date_str = start_date.strftime("%Y-%m-%d")
+            end_date_str = end_date.strftime("%Y-%m-%d")
+            
+            # Data de referência é a mesma da final (mantido para compatibilidade)
+            date_str = end_date_str
+            
+            logger.info(f"Buscando dados Dropi para o período: {start_date_str} a {end_date_str}")
+            
+            # Fazer login no Dropi - mais tempo e retries para login
+            login_success = False
+            login_retries = 3
+            
+            for login_attempt in range(login_retries):
+                try:
+                    logger.info(f"Tentativa de login #{login_attempt+1}")
+                    login_success = login(driver, store["dropi_username"], store["dropi_password"], logger, store["dropi_url"])
+                    if login_success:
+                        logger.info("Login bem-sucedido!")
+                        break
+                    else:
+                        logger.warning(f"Falha no login (tentativa {login_attempt+1})")
+                        # Esperar mais tempo entre tentativas de login
+                        time.sleep(3)
+                except Exception as e:
+                    logger.error(f"Erro durante login (tentativa {login_attempt+1}): {str(e)}")
+                    time.sleep(3)
+            
+            if not login_success:
+                logger.error("Falha em todas as tentativas de login")
+                driver.quit()
+                time.sleep(5)  # Esperar mais tempo antes da próxima tentativa completa
+                continue
+            
+            # Navegar para o relatório de produtos vendidos
+            if not navigate_to_product_sold(driver, logger):
+                logger.error("Falha ao navegar para o relatório de produtos vendidos")
+                driver.quit()
+                time.sleep(3)
+                continue
+            
+            # Selecionar intervalo de datas específicas
+            date_selection = select_date_range(driver, start_date, end_date, logger)
+            if not date_selection:
+                logger.error("Falha ao selecionar intervalo de datas")
+                driver.quit()
+                time.sleep(3)
+                continue
+            
+            # Verificar se há uma mensagem de "sem dados" após a seleção de datas
+            try:
+                no_data_elements = driver.find_elements(By.XPATH, 
+                    "//div[contains(text(), 'No hay datos') or contains(text(), 'Sin resultados') or contains(text(), 'No data')]")
+                
+                if no_data_elements:
+                    logger.info(f"Detectada mensagem de 'sem dados' após selecionar datas: {no_data_elements[0].text}")
+                    driver.save_screenshot("no_data_found_after_selection.png")
+                    
+                    # Mesmo que não haja dados, consideramos isso um "sucesso" - apenas não há produtos para salvar
+                    driver.quit()
+                    
+                    # Salvar registro vazio mas válido para indicar que os dados foram atualizados
+                    # mas não existem produtos para este período
+                    save_dropi_metrics_to_db(store["id"], date_str, [], start_date_str, end_date_str)
+                    
+                    logger.info("Dados atualizados com sucesso (nenhum produto para o período)")
+                    return True
+            except:
+                pass
+            
+            # Extrair dados dos produtos
+            product_data = extract_product_data(driver, logger)
+            
+            # Fechar o driver após extração de dados
             driver.quit()
-        except:
-            pass
-        return False
+            driver = None
+            
+            if not product_data and retry_count < max_retries:
+                logger.warning(f"Nenhum produto encontrado na tentativa {retry_count}. Tentando novamente...")
+                time.sleep(3)
+                continue
+            
+            # Salvar os dados (mesmo que seja uma lista vazia)
+            save_result = save_dropi_metrics_to_db(store["id"], date_str, product_data, start_date_str, end_date_str)
+            
+            if save_result:
+                logger.info(f"Dados salvos com sucesso! {len(product_data)} produtos encontrados")
+                success = True
+                return True
+            else:
+                logger.error("Falha ao salvar dados no banco")
+                if retry_count < max_retries:
+                    time.sleep(3)
+                    continue
+                else:
+                    return False
+                
+        except Exception as e:
+            logger.error(f"Erro na tentativa {retry_count} de atualizar dados: {str(e)}")
+            
+            if driver:
+                try:
+                    driver.save_screenshot(f"error_retry_{retry_count}.png")
+                    driver.quit()
+                    driver = None
+                except:
+                    pass
+            
+            if retry_count < max_retries:
+                # Esperar antes de tentar novamente
+                wait_time = 3 * retry_count  # Tempo crescente entre tentativas
+                logger.info(f"Aguardando {wait_time} segundos antes da próxima tentativa...")
+                time.sleep(wait_time)
+            else:
+                return False
+    
+    # Se chegou aqui, todas as tentativas falharam
+    return success
     
 def store_dashboard(store):
     """Exibe o dashboard para a loja selecionada com o novo layout."""
