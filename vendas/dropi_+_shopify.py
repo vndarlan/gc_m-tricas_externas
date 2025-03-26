@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 import requests
 import json
 import os
@@ -20,7 +20,6 @@ import altair as alt
 import sys
 import sqlite3
 from selenium.webdriver.common.keys import Keys
-import datetime
 
 # Adicionar a raiz do projeto ao path para importar módulos
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -1162,7 +1161,7 @@ def select_date_range(driver, start_date, end_date, logger):
             end_date_obj = end_date
             
         # Converter a data atual para datetime.date para comparações consistentes
-        today = datetime.date.today()
+        today = date.today()
         
         # Verificar se há opções pré-definidas que podemos usar em vez de selecionar datas manualmente
         if (today - start_date_obj).days <= 1 and (today - end_date_obj).days <= 1:
