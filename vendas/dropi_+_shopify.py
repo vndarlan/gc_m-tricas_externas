@@ -1957,8 +1957,6 @@ def display_shopify_data(data, selected_category):
                 )
         else:
             st.warning("Nenhum produto encontrado com o filtro selecionado")
-    #else:
-        st.info("Não há dados disponíveis para o intervalo selecionado")
 
 def display_shopify_chart(data, selected_category):
     """Exibe gráfico de barras (colunas) para produtos vs número de pedidos para os dados Shopify."""
