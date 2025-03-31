@@ -3106,17 +3106,6 @@ def store_dashboard(store):
         else:
             st.error("Erro ao atualizar dados da Dropi.")
     
-    # ========== SEÇÃO DE ANÁLISE DE EFETIVIDADE ==========
-    # A seção de análise de efetividade agora vem LOGO APÓS os filtros de Dropi
-    # e ANTES da exibição de dados do Dropi
-    st.markdown('<h4>ANÁLISE DE EFETIVIDADE</h4>', unsafe_allow_html=True)
-    
-    # Exibir tabela de efetividade para o intervalo selecionado
-    display_effectiveness_table(store["id"], dropi_start_date_str, dropi_end_date_str)
-    
-    # Linha divisória entre as seções
-    st.markdown('<hr>', unsafe_allow_html=True)
-
     # ========== EXIBIÇÃO DE DADOS DROPI ==========
     # Buscar dados da Dropi
     conn = get_db_connection()
@@ -3193,6 +3182,17 @@ def store_dashboard(store):
         
         st.markdown('</div>', unsafe_allow_html=True)
 
+        # ========== SEÇÃO DE ANÁLISE DE EFETIVIDADE ==========
+    # A seção de análise de efetividade agora vem LOGO APÓS os filtros de Dropi
+    # e ANTES da exibição de dados do Dropi
+    st.markdown('<h4>ANÁLISE DE EFETIVIDADE</h4>', unsafe_allow_html=True)
+    
+    # Exibir tabela de efetividade para o intervalo selecionado
+    display_effectiveness_table(store["id"], dropi_start_date_str, dropi_end_date_str)
+    
+    # Linha divisória entre as seções
+    st.markdown('<hr>', unsafe_allow_html=True)
+
     # Exibir apenas a tabela de produtos Dropi
     if not dropi_data.empty:
         st.subheader("Produtos Dropi")
@@ -3220,9 +3220,8 @@ def store_dashboard(store):
                 column_config={
                     "store_id": None,  # Ocultar esta coluna
                     "image_url": st.column_config.ImageColumn("Imagem", help="Imagem do produto"),
-                    "date_start": None,
-                    "date_end": None,
-                    "product_instance_id": None,
+                    "date_start": st.column_config.TextColumn("Data Inicial"),
+                    "date_end": st.column_config.TextColumn("Data Final"),
                     "product": "Produto",
                     "provider": "Fornecedor",
                     "stock": "Estoque",
