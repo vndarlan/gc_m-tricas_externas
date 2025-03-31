@@ -1791,31 +1791,18 @@ def save_dropi_metrics_to_db(store_id, date_str, products_data, start_date_str=N
             except:
                 pass
     
-    # TERCEIRA ETAPA: Agrupar produtos duplicados
-    product_names = {}
-    for product in products_data:
-        product_name = product.get("product", "")
-        if not product_name:
-            continue
-            
-        if product_name in product_names:
-            logger.warning(f"Produto duplicado encontrado: {product_name}")
-            # Somar os valores para dados duplicados
-            for key in ["orders_count", "orders_value", "transit_count", "transit_value", 
-                       "delivered_count", "delivered_value", "profits"]:
-                product_names[product_name][key] += product.get(key, 0)
-            # Para campos que não são numéricos, manter o valor não vazio
-            if not product_names[product_name].get("image_url") and product.get("image_url"):
-                product_names[product_name]["image_url"] = product.get("image_url")
-            if not product_names[product_name].get("provider") and product.get("provider"):
-                product_names[product_name]["provider"] = product.get("provider")
-        else:
-            product_names[product_name] = product
+    # IMPORTANTE: REMOVER A ETAPA DE AGRUPAMENTO DE PRODUTOS DUPLICADOS
+    # Agora vamos tratar cada produto como único, mesmo se tiver o mesmo nome
     
-    # QUARTA ETAPA: Inserir os dados produto por produto
+    # INSERIR OS DADOS - cada produto separadamente
     saved_count = 0
-    for product_name, product in product_names.items():
+    for product in products_data:
         try:
+            # Obter o nome do produto para log
+            product_name = product.get("product", "")
+            if not product_name:
+                continue
+                
             # Use raw SQL para maior controle e debug
             conn = get_db_connection()
             cursor = conn.cursor()
@@ -1857,13 +1844,14 @@ def save_dropi_metrics_to_db(store_id, date_str, products_data, start_date_str=N
             # Log the values for debugging
             logger.info(f"Salvando produto: {product_name}")
             logger.info(f"  Image URL: {product.get('image_url', '')}")
+            logger.info(f"  Stock: {product.get('stock', 0)}")
             
             conn.commit()
             saved_count += 1
             cursor.close()
             conn.close()
         except Exception as e:
-            logger.error(f"Erro ao salvar produto {product_name}: {str(e)}")
+            logger.error(f"Erro ao salvar produto {product.get('product', '')}: {str(e)}")
             if conn:
                 try:
                     conn.rollback()
@@ -1871,7 +1859,7 @@ def save_dropi_metrics_to_db(store_id, date_str, products_data, start_date_str=N
                 except:
                     pass
     
-    logger.info(f"Total de {saved_count} produtos salvos com sucesso de {len(product_names)}")
+    logger.info(f"Total de {saved_count} produtos salvos com sucesso de {len(products_data)}")
     return saved_count > 0
 
 # Função para exibir tabela de produtos Dropi com campos personalizáveis
