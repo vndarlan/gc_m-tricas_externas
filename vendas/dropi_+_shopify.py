@@ -3009,17 +3009,6 @@ def store_dashboard(store):
         else:
             st.error("Erro ao atualizar dados da Dropi.")
     
-    # ========== SEÇÃO DE ANÁLISE DE EFETIVIDADE ==========
-    # A seção de análise de efetividade agora vem LOGO APÓS os filtros de Dropi
-    # e ANTES da exibição de dados do Dropi
-    st.markdown('<h4>ANÁLISE DE EFETIVIDADE</h4>', unsafe_allow_html=True)
-    
-    # Exibir tabela de efetividade para o intervalo selecionado
-    display_effectiveness_table(store["id"], dropi_start_date_str, dropi_end_date_str)
-    
-    # Linha divisória entre as seções
-    st.markdown('<hr>', unsafe_allow_html=True)
-
     # ========== EXIBIÇÃO DE DADOS DROPI ==========
     # Buscar dados da Dropi
     conn = get_db_connection()
@@ -3095,6 +3084,17 @@ def store_dashboard(store):
             st.metric("Entregues", f"{total_delivered}", f"{currency_to} {total_delivered_value:,.2f}")
         
         st.markdown('</div>', unsafe_allow_html=True)
+
+    # ========== SEÇÃO DE ANÁLISE DE EFETIVIDADE ==========
+    # A seção de análise de efetividade agora vem LOGO APÓS os filtros de Dropi
+    # e ANTES da exibição de dados do Dropi
+    st.markdown('<h4>ANÁLISE DE EFETIVIDADE</h4>', unsafe_allow_html=True)
+    
+    # Exibir tabela de efetividade para o intervalo selecionado
+    display_effectiveness_table(store["id"], dropi_start_date_str, dropi_end_date_str)
+    
+    # Linha divisória entre as seções
+    st.markdown('<hr>', unsafe_allow_html=True)
 
     # Crie colunas para a tabela e o gráfico lado a lado
     dropi_col1, dropi_col2 = st.columns(2)
