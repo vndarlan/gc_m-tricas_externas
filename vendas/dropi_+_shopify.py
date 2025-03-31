@@ -1938,6 +1938,9 @@ def display_shopify_data(data, selected_category):
             product_data['url'] = product_data['product'].map(url_mapping)
             product_data['image'] = product_data['product'].map(image_mapping)
             
+            # Ordenar por total_orders (maior para menor)
+            product_data = product_data.sort_values('total_orders', ascending=False)
+            
             # Exibir tabela com dados agrupados
             with st.expander("Tabela de Produtos Shopify", expanded=True):
                 # Selecionar apenas as colunas que queremos exibir (removendo total_value que é redundante)
@@ -2321,6 +2324,9 @@ def display_effectiveness_table(store_id, start_date_str, end_date_str):
             on='product', 
             how='left'
         )
+        
+        # Ordenar por efetividade (maior para menor)
+        dropi_data = dropi_data.sort_values('effectiveness', ascending=False)
         
         # Informar data dos dados
         if start_date_str == end_date_str:
@@ -3089,6 +3095,9 @@ def store_dashboard(store):
             
             # Primeiro, criar uma cópia do DataFrame sem a coluna 'date'
             display_df = dropi_data.drop(columns=['date'], errors='ignore')
+
+            # Ordenar por orders_count (maior para menor)
+            display_df = display_df.sort_values('orders_count', ascending=False)
             
             # Reorganizar colunas para mostrar imagem primeiro se existir
             if 'image_url' in display_df.columns:
@@ -3177,7 +3186,6 @@ def store_dashboard(store):
     st.markdown('<hr>', unsafe_allow_html=True)
     
     # Abrindo nova seção para análise de efetividade
-    #st.markdown('<div class="main-section">', unsafe_allow_html=True)
     st.markdown('<h4>ANÁLISE DE EFETIVIDADE</h4>', unsafe_allow_html=True)
 
     # Exibir tabela de efetividade para o intervalo selecionado
@@ -3185,6 +3193,9 @@ def store_dashboard(store):
     
     # Fechando a seção de análise de efetividade
     st.markdown('</div>', unsafe_allow_html=True)
+    
+    # Linha divisória entre as seções
+    st.markdown('<hr>', unsafe_allow_html=True)
 
 # Inicializar banco de dados
 init_db()
