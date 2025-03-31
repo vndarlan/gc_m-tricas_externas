@@ -2433,13 +2433,11 @@ def display_effectiveness_table(store_id, start_date_str, end_date_str):
     
     conn = get_db_connection()
     
-    # Get Dropi data for the specific date range including image URLs
+    # Get Dropi data for the specific date range including image URLs - não agrupa mais por produto
     dropi_query = """
-        SELECT product, SUM(orders_count) as orders_count, SUM(delivered_count) as delivered_count, 
-               MAX(image_url) as image_url
+        SELECT product, product_instance_id, orders_count, delivered_count, image_url, provider, stock
         FROM dropi_metrics 
         WHERE store_id = ? AND date_start = ? AND date_end = ?
-        GROUP BY product
     """
     
     if is_railway_environment():
@@ -2449,7 +2447,7 @@ def display_effectiveness_table(store_id, start_date_str, end_date_str):
     cursor.execute(dropi_query, (store_id, start_date_str, end_date_str))
     
     # Converter resultados para DataFrame
-    columns = ["product", "orders_count", "delivered_count", "image_url"]
+    columns = ["product", "product_instance_id", "orders_count", "delivered_count", "image_url", "provider", "stock"]
     dropi_data = pd.DataFrame(cursor.fetchall(), columns=columns)
     
     # Get saved general effectiveness values for ALL products
@@ -2468,7 +2466,7 @@ def display_effectiveness_table(store_id, start_date_str, end_date_str):
     
     conn.close()
     
-    # Estilo para tabelas com fundo branco, incluindo cabeçalhos
+    # Estilo para tabelas com fundo branco
     st.markdown("""
     <style>
     /* Tabelas e componentes relacionados com fundo branco */
@@ -2476,19 +2474,16 @@ def display_effectiveness_table(store_id, start_date_str, end_date_str):
     .stDataFrame table, .stDataEditor table, .stTable table {
         background-color: white !important;
     }
-    
     /* Cabeçalhos com fundo branco */
     .stDataFrame thead tr, .stDataEditor thead tr, .stTable thead tr,
     .stDataFrame th, .stDataEditor th, .stTable th {
         background-color: white !important;
         color: black !important;
     }
-    
     /* Remover cores alternadas de linhas */
     .stDataFrame tbody tr, .stDataEditor tbody tr, .stTable tbody tr {
         background-color: white !important;
     }
-    
     /* Remover cores de fundo padrão de células */
     .stDataFrame td, .stDataEditor td, .stTable td {
         background-color: white !important;
@@ -2498,13 +2493,17 @@ def display_effectiveness_table(store_id, start_date_str, end_date_str):
     
     # Process the data if we have any
     if not dropi_data.empty:
+        # Criar identificador único para cada produto, combinando nome e id da instância
+        dropi_data['product_full_id'] = dropi_data['product'] + "___" + dropi_data['product_instance_id']
+        
         # Calculate effectiveness
         dropi_data['effectiveness'] = 0.0
         for idx, row in dropi_data.iterrows():
             if row['orders_count'] > 0:
                 dropi_data.at[idx, 'effectiveness'] = (row['delivered_count'] / row['orders_count']) * 100
         
-        # Add general effectiveness column from saved values using left join
+        # Add general effectiveness column from saved values using left join on product name
+        # (mantém o id de instância separado)
         dropi_data = pd.merge(
             dropi_data, 
             effectiveness_data[['product', 'general_effectiveness']], 
@@ -2538,9 +2537,13 @@ def display_effectiveness_table(store_id, start_date_str, end_date_str):
             color = row['_row_color']
             return [f'background-color: {color}'] * len(row)
         
+        # Criar uma coluna de produto formatada que inclui o estoque para distinguir produtos com mesmo nome
+        dropi_data['product_display'] = dropi_data.apply(
+            lambda row: f"{row['product']} (Estq: {row['stock']})", axis=1)
+        
         # Preparar DataFrame para visualização
-        view_columns = ['image_url', 'product', 'orders_count', 'delivered_count', 
-                      'effectiveness', 'general_effectiveness', '_row_color']
+        view_columns = ['image_url', 'product_display', 'stock', 'orders_count', 'delivered_count', 
+                      'effectiveness', 'general_effectiveness', '_row_color', 'product_full_id']
         view_df = dropi_data[view_columns].copy()
         
         # Aplicar estilo com cores
@@ -2551,7 +2554,8 @@ def display_effectiveness_table(store_id, start_date_str, end_date_str):
             styled_view,
             column_config={
                 "image_url": st.column_config.ImageColumn("Imagem", help="Imagem do produto"),
-                "product": "Produto",
+                "product_display": "Produto",
+                "stock": "Estoque",
                 "orders_count": st.column_config.NumberColumn("Pedidos"),
                 "delivered_count": st.column_config.NumberColumn("Entregues"),
                 "effectiveness": st.column_config.NumberColumn(
@@ -2564,7 +2568,8 @@ def display_effectiveness_table(store_id, start_date_str, end_date_str):
                     format="%.1f%%",
                     help="Valor definido manualmente"
                 ),
-                "_row_color": None  # Ocultar coluna de cor
+                "_row_color": None,  # Ocultar coluna de cor
+                "product_full_id": None  # Ocultar ID completo
             },
             hide_index=True,
             use_container_width=True,
@@ -2573,8 +2578,8 @@ def display_effectiveness_table(store_id, start_date_str, end_date_str):
         
         # Seção para edição da Efetividade Geral - Minimizada por padrão
         with st.expander("Editar Efetividade Geral", expanded=False):
-            # Preparar DataFrame para edição
-            edit_columns = ['product', 'general_effectiveness', '_row_color']
+            # Preparar DataFrame para edição usando product_full_id para identificação única
+            edit_columns = ['product_display', 'general_effectiveness', '_row_color', 'product']
             edit_df = dropi_data[edit_columns].copy()
             
             # Aplicar o mesmo estilo de cores à tabela editável
@@ -2584,15 +2589,16 @@ def display_effectiveness_table(store_id, start_date_str, end_date_str):
             edited_df = st.data_editor(
                 edit_df,
                 column_config={
-                    "product": "Produto",
+                    "product_display": "Produto",
                     "general_effectiveness": st.column_config.NumberColumn(
                         "Efetividade Geral (%)",
                         format="%.1f%%",
                         help="Valor definido manualmente"
                     ),
-                    "_row_color": None  # Ocultar coluna de cor
+                    "_row_color": None,  # Ocultar coluna de cor
+                    "product": None  # Ocultar nome original do produto
                 },
-                disabled=["product"],
+                disabled=["product_display"],
                 hide_index=True,
                 use_container_width=True,
                 key="edit_effectiveness_table"
@@ -2600,34 +2606,24 @@ def display_effectiveness_table(store_id, start_date_str, end_date_str):
         
         # Check if any general_effectiveness values have been edited
         if not edited_df.equals(edit_df):
-            # Find rows where general_effectiveness has changed
             for idx, row in edited_df.iterrows():
                 product = row['product']
                 new_value = row['general_effectiveness']
                 
-                # Get the old value (if exists)
                 try:
                     old_value = edit_df.loc[edit_df['product'] == product, 'general_effectiveness'].iloc[0]
-                    # Save if changed
                     if pd.notna(new_value) and (pd.isna(old_value) or new_value != old_value):
                         save_effectiveness(store_id, product, new_value)
-                        logger.info(f"Salvou efetividade geral para '{product}': {new_value}")
                 except:
-                    # If there's no old value, save the new one if it's not None/NaN
                     if pd.notna(new_value):
                         save_effectiveness(store_id, product, new_value)
-                        logger.info(f"Salvou nova efetividade geral para '{product}': {new_value}")
         
-            # Add a button to save all changes at once
             if st.button("Salvar Todas as Alterações", key="save_effectiveness"):
-                # Save all values
                 for idx, row in edited_df.iterrows():
                     if pd.notna(row['general_effectiveness']):
                         save_effectiveness(store_id, row['product'], row['general_effectiveness'])
                 st.success("Valores de efetividade geral salvos com sucesso!")
-            
     else:
-        # MODIFICAÇÃO: Removida a mensagem de aviso que estava duplicada
         pass  # Não exibe nenhuma mensagem quando não há dados
 
 def store_dashboard(store):
