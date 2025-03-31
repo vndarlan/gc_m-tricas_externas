@@ -3220,8 +3220,9 @@ def store_dashboard(store):
                 column_config={
                     "store_id": None,  # Ocultar esta coluna
                     "image_url": st.column_config.ImageColumn("Imagem", help="Imagem do produto"),
-                    "date_start": st.column_config.TextColumn("Data Inicial"),
-                    "date_end": st.column_config.TextColumn("Data Final"),
+                    "date_start": None,
+                    "date_end": None,
+                    "product_instance_id": None,
                     "product": "Produto",
                     "provider": "Fornecedor",
                     "stock": "Estoque",
