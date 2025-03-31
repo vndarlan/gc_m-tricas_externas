@@ -1956,7 +1956,8 @@ def display_shopify_data(data, selected_category):
                         "url": "URL do Produto"
                     },
                     hide_index=True,
-                    use_container_width=True
+                    use_container_width=True,
+                    key="shopify_products_table"
                 )
         else:
             st.warning("Nenhum produto encontrado com o filtro selecionado")
@@ -2380,7 +2381,8 @@ def display_effectiveness_table(store_id, start_date_str, end_date_str):
                 "_row_color": None  # Ocultar coluna de cor
             },
             hide_index=True,
-            use_container_width=True
+            use_container_width=True,
+            key="effectiveness_table"
         )
         
         # Seção para edição da Efetividade Geral - Minimizada por padrão
@@ -2934,24 +2936,6 @@ def store_dashboard(store):
     # Linha divisória entre as seções
     st.markdown('<hr>', unsafe_allow_html=True)
     
-        # ========== SEÇÃO DE EFETIVIDADE (Parte de Dropi) ==========
-    st.markdown('<hr>', unsafe_allow_html=True)
-    
-    # Abrindo nova seção para análise de efetividade
-    st.markdown('<h4>ANÁLISE DE EFETIVIDADE</h4>', unsafe_allow_html=True)
-
-    # Exibir tabela de efetividade para o intervalo selecionado
-    display_effectiveness_table(store["id"], dropi_start_date_str, dropi_end_date_str)
-    
-    # Fechando a seção de análise de efetividade
-    st.markdown('</div>', unsafe_allow_html=True)
-    
-    # Linha divisória entre as seções
-    st.markdown('<hr>', unsafe_allow_html=True)
-
-    # Abrindo uma nova seção principal para Dropi
-    #st.markdown('<div class="main-section">', unsafe_allow_html=True)
-
     # ========== SEÇÃO DROPI (LAYOUT ALINHADO EM UMA LINHA) ==========
     # Container para todos os elementos em linha única
     st.markdown("""
@@ -3024,7 +3008,19 @@ def store_dashboard(store):
             st.success("Dados da Dropi atualizados com sucesso!")
         else:
             st.error("Erro ao atualizar dados da Dropi.")
+    
+    # ========== SEÇÃO DE ANÁLISE DE EFETIVIDADE ==========
+    # A seção de análise de efetividade agora vem LOGO APÓS os filtros de Dropi
+    # e ANTES da exibição de dados do Dropi
+    st.markdown('<h4>ANÁLISE DE EFETIVIDADE</h4>', unsafe_allow_html=True)
+    
+    # Exibir tabela de efetividade para o intervalo selecionado
+    display_effectiveness_table(store["id"], dropi_start_date_str, dropi_end_date_str)
+    
+    # Linha divisória entre as seções
+    st.markdown('<hr>', unsafe_allow_html=True)
 
+    # ========== EXIBIÇÃO DE DADOS DROPI ==========
     # Buscar dados da Dropi
     conn = get_db_connection()
     query = """
@@ -3110,10 +3106,10 @@ def store_dashboard(store):
             
             # Primeiro, criar uma cópia do DataFrame sem a coluna 'date'
             display_df = dropi_data.drop(columns=['date'], errors='ignore')
-
+            
             # Ordenar por orders_count (maior para menor)
             display_df = display_df.sort_values('orders_count', ascending=False)
-
+            
             # Reorganizar colunas para mostrar imagem primeiro se existir
             if 'image_url' in display_df.columns:
                 cols = display_df.columns.tolist()
@@ -3139,7 +3135,8 @@ def store_dashboard(store):
                     "delivered_value": st.column_config.NumberColumn(f"Valor Entregues ({currency_to})", format="%.2f"),
                     "profits": st.column_config.NumberColumn(f"Lucros ({currency_to})", format="%.2f")
                 },
-                use_container_width=True
+                use_container_width=True,
+                key="dropi_products_table"
             )
 
     with dropi_col2:
@@ -3193,9 +3190,6 @@ def store_dashboard(store):
             ).interactive()
             
             st.altair_chart(chart, use_container_width=True)
-
-    # Fechando a seção principal Dropi
-    st.markdown('</div>', unsafe_allow_html=True)
 
 # Inicializar banco de dados
 init_db()
