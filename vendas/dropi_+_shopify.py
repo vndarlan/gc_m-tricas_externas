@@ -3024,16 +3024,8 @@ def store_dashboard(store):
             formatted_value = "${:,.2f}".format(total_value)
             st.metric("Valor Total", formatted_value)
 
-    # Crie colunas para a tabela e o gráfico lado a lado
-    shopify_col1, shopify_col2 = st.columns(2)
-
-    with shopify_col1:
-        # Tabela de produtos
-        display_shopify_data(shopify_data, selected_category)
-
-    with shopify_col2:
-        # Gráfico
-        display_shopify_chart(shopify_data, selected_category)
+    # Mostrar apenas a tabela, sem divisão em colunas
+    display_shopify_data(shopify_data, selected_category)
 
     # Fechando a seção principal Shopify
     st.markdown('</div>', unsafe_allow_html=True)
@@ -3201,105 +3193,49 @@ def store_dashboard(store):
         
         st.markdown('</div>', unsafe_allow_html=True)
 
-    # Crie colunas para a tabela e o gráfico lado a lado
-    dropi_col1, dropi_col2 = st.columns(2)
-
-    with dropi_col1:
-        # Exibir tabela de produtos Dropi
-        if not dropi_data.empty:
-            st.subheader("Produtos Dropi")
-            
-            # Verificar se a loja está no modo personalizado
-            if store.get("is_custom", False):
-                # Usar a função de tabela personalizável
-                display_dropi_table_with_custom_fields(store["id"], dropi_data, currency_to)
-            else:
-                # Primeiro, criar uma cópia do DataFrame sem a coluna 'date'
-                display_df = dropi_data.drop(columns=['date'], errors='ignore')
-                
-                # Ordenar por orders_count (maior para menor)
-                display_df = display_df.sort_values('orders_count', ascending=False)
-                
-                # Reorganizar colunas para mostrar imagem primeiro se existir
-                if 'image_url' in display_df.columns:
-                    cols = display_df.columns.tolist()
-                    cols.remove('image_url')
-                    cols = ['image_url'] + cols
-                    display_df = display_df[cols]
-                
-                st.dataframe(
-                    display_df,
-                    column_config={
-                        "store_id": None,  # Ocultar esta coluna
-                        "image_url": st.column_config.ImageColumn("Imagem", help="Imagem do produto"),
-                        "date_start": st.column_config.TextColumn("Data Inicial"),
-                        "date_end": st.column_config.TextColumn("Data Final"),
-                        "product": "Produto",
-                        "provider": "Fornecedor",
-                        "stock": "Estoque",
-                        "orders_count": "Pedidos",
-                        "orders_value": st.column_config.NumberColumn(f"Valor Pedidos ({currency_to})", format="%.2f"),
-                        "transit_count": "Em Trânsito",
-                        "transit_value": st.column_config.NumberColumn(f"Valor Trânsito ({currency_to})", format="%.2f"),
-                        "delivered_count": "Entregues",
-                        "delivered_value": st.column_config.NumberColumn(f"Valor Entregues ({currency_to})", format="%.2f"),
-                        "profits": st.column_config.NumberColumn(f"Lucros ({currency_to})", format="%.2f")
-                    },
-                    use_container_width=True,
-                    key="dropi_products_table"
-                )
-
-    with dropi_col2:
-        # Exibir gráfico interativo para os dados Dropi
-        if not dropi_data.empty:
-            # Preparar dados para gráfico
-            chart_data = dropi_data[['product', 'orders_count', 'transit_count', 'delivered_count']].copy()
-            
-            # Ordenar por número de pedidos para melhor visualização
-            chart_data = chart_data.sort_values('orders_count', ascending=False)
-            
-            st.subheader("Gráfico de Produtos Dropi")
-            # Criar gráfico interativo usando Altair
-            import altair as alt
-            
-            # Transformar os dados para formato long, adequado para gráficos de barras empilhadas
-            chart_data_long = pd.melt(
-                chart_data,
-                id_vars=['product'],
-                value_vars=['orders_count', 'transit_count', 'delivered_count'],
-                var_name='status',
-                value_name='quantidade'
+    # Exibir apenas a tabela de produtos Dropi
+    if not dropi_data.empty:
+        st.subheader("Produtos Dropi")
+    
+        # Verificar se a loja está no modo personalizado
+        if store.get("is_custom", False):
+            # Usar a função de tabela personalizável
+            display_dropi_table_with_custom_fields(store["id"], dropi_data, currency_to)
+        else:
+            # Primeiro, criar uma cópia do DataFrame sem a coluna 'date'
+            display_df = dropi_data.drop(columns=['date'], errors='ignore')
+        
+            # Ordenar por orders_count (maior para menor)
+            display_df = display_df.sort_values('orders_count', ascending=False)
+        
+            # Reorganizar colunas para mostrar imagem primeiro se existir
+            if 'image_url' in display_df.columns:
+                cols = display_df.columns.tolist()
+                cols.remove('image_url')
+                cols = ['image_url'] + cols
+                display_df = display_df[cols]
+        
+            st.dataframe(
+                display_df,
+                column_config={
+                    "store_id": None,  # Ocultar esta coluna
+                    "image_url": st.column_config.ImageColumn("Imagem", help="Imagem do produto"),
+                    "date_start": st.column_config.TextColumn("Data Inicial"),
+                    "date_end": st.column_config.TextColumn("Data Final"),
+                    "product": "Produto",
+                    "provider": "Fornecedor",
+                    "stock": "Estoque",
+                    "orders_count": "Pedidos",
+                    "orders_value": st.column_config.NumberColumn(f"Valor Pedidos ({currency_to})", format="%.2f"),
+                    "transit_count": "Em Trânsito",
+                    "transit_value": st.column_config.NumberColumn(f"Valor Trânsito ({currency_to})", format="%.2f"),
+                    "delivered_count": "Entregues",
+                    "delivered_value": st.column_config.NumberColumn(f"Valor Entregues ({currency_to})", format="%.2f"),
+                    "profits": st.column_config.NumberColumn(f"Lucros ({currency_to})", format="%.2f")
+                },
+                use_container_width=True,
+                key="dropi_products_table"
             )
-            
-            # Mapear os nomes das colunas para rótulos mais amigáveis
-            status_mapping = {
-                'orders_count': 'Pedidos',
-                'transit_count': 'Em Trânsito',
-                'delivered_count': 'Entregues'
-            }
-            
-            chart_data_long['status'] = chart_data_long['status'].map(status_mapping)
-            
-            # Definir ordem específica para a legenda
-            status_order = ['Pedidos', 'Em Trânsito', 'Entregues']
-            
-            # Criar gráfico de barras empilhadas
-            chart = alt.Chart(chart_data_long).mark_bar().encode(
-                x=alt.X('product:N', title='Produto', sort='-y'),
-                y=alt.Y('quantidade:Q', title='Quantidade', stack='zero'),
-                color=alt.Color('status:N', 
-                               scale=alt.Scale(domain=status_order, 
-                                               range=['#4B9CD3', '#FFD700', '#50C878']),
-                               title='Status'),
-                order=alt.Order('status:N', sort='ascending'),
-                tooltip=['product', 'status', 'quantidade']
-            ).properties(
-                width='container',
-                height=500,
-                title='Status por Produto'
-            ).interactive()
-            
-            st.altair_chart(chart, use_container_width=True)
 
 # Inicializar banco de dados
 init_db()
