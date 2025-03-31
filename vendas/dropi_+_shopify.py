@@ -2934,6 +2934,21 @@ def store_dashboard(store):
     # Linha divisória entre as seções
     st.markdown('<hr>', unsafe_allow_html=True)
     
+        # ========== SEÇÃO DE EFETIVIDADE (Parte de Dropi) ==========
+    st.markdown('<hr>', unsafe_allow_html=True)
+    
+    # Abrindo nova seção para análise de efetividade
+    st.markdown('<h4>ANÁLISE DE EFETIVIDADE</h4>', unsafe_allow_html=True)
+
+    # Exibir tabela de efetividade para o intervalo selecionado
+    display_effectiveness_table(store["id"], dropi_start_date_str, dropi_end_date_str)
+    
+    # Fechando a seção de análise de efetividade
+    st.markdown('</div>', unsafe_allow_html=True)
+    
+    # Linha divisória entre as seções
+    st.markdown('<hr>', unsafe_allow_html=True)
+
     # Abrindo uma nova seção principal para Dropi
     #st.markdown('<div class="main-section">', unsafe_allow_html=True)
 
@@ -3098,7 +3113,7 @@ def store_dashboard(store):
 
             # Ordenar por orders_count (maior para menor)
             display_df = display_df.sort_values('orders_count', ascending=False)
-            
+
             # Reorganizar colunas para mostrar imagem primeiro se existir
             if 'image_url' in display_df.columns:
                 cols = display_df.columns.tolist()
@@ -3181,21 +3196,6 @@ def store_dashboard(store):
 
     # Fechando a seção principal Dropi
     st.markdown('</div>', unsafe_allow_html=True)
-    
-    # ========== SEÇÃO DE EFETIVIDADE (Parte de Dropi) ==========
-    st.markdown('<hr>', unsafe_allow_html=True)
-    
-    # Abrindo nova seção para análise de efetividade
-    st.markdown('<h4>ANÁLISE DE EFETIVIDADE</h4>', unsafe_allow_html=True)
-
-    # Exibir tabela de efetividade para o intervalo selecionado
-    display_effectiveness_table(store["id"], dropi_start_date_str, dropi_end_date_str)
-    
-    # Fechando a seção de análise de efetividade
-    st.markdown('</div>', unsafe_allow_html=True)
-    
-    # Linha divisória entre as seções
-    st.markdown('<hr>', unsafe_allow_html=True)
 
 # Inicializar banco de dados
 init_db()
