@@ -489,6 +489,89 @@ def update_dropi_metrics_schema():
     finally:
         conn.close()
 
+def update_dropi_metrics_schema_for_duplicates():
+    """Atualiza o esquema da tabela dropi_metrics para permitir produtos duplicados."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    try:
+        # Para SQLite precisamos recriar a tabela com a nova estrutura
+        if not is_railway_environment():
+            # 1. Criar tabela temporária com nova estrutura
+            cursor.execute("""
+                CREATE TABLE dropi_metrics_new (
+                    store_id TEXT,
+                    date TEXT,
+                    date_start TEXT,
+                    date_end TEXT,
+                    product TEXT,
+                    product_instance_id TEXT,  -- Novo campo para distinguir produtos com mesmo nome
+                    provider TEXT,
+                    stock INTEGER,
+                    orders_count INTEGER,
+                    orders_value REAL,
+                    transit_count INTEGER, 
+                    transit_value REAL,
+                    delivered_count INTEGER,
+                    delivered_value REAL,
+                    profits REAL,
+                    image_url TEXT,
+                    PRIMARY KEY (store_id, date, product, product_instance_id)
+                )
+            """)
+            
+            # 2. Migrar dados com um ID único para cada linha
+            cursor.execute("""
+                INSERT INTO dropi_metrics_new 
+                SELECT 
+                    store_id, date, 
+                    COALESCE(date_start, date) as date_start, 
+                    COALESCE(date_end, date) as date_end,
+                    product,
+                    CAST(ROWID as TEXT) as product_instance_id,
+                    provider, stock, orders_count, orders_value,
+                    transit_count, transit_value, delivered_count, 
+                    delivered_value, profits,
+                    COALESCE(image_url, '') as image_url
+                FROM dropi_metrics
+            """)
+            
+            # 3. Substituir tabela antiga pela nova
+            cursor.execute("DROP TABLE dropi_metrics")
+            cursor.execute("ALTER TABLE dropi_metrics_new RENAME TO dropi_metrics")
+            
+        else:
+            # Para PostgreSQL precisaríamos remover a restrição existente e adicionar uma nova
+            # Isso é mais complexo e requer verificações adicionais
+            cursor.execute("""
+                ALTER TABLE dropi_metrics 
+                ADD COLUMN IF NOT EXISTS product_instance_id TEXT DEFAULT '1'
+            """)
+            
+            # Tentar remover a constraint antiga e criar uma nova
+            try:
+                cursor.execute("ALTER TABLE dropi_metrics DROP CONSTRAINT dropi_metrics_pkey")
+            except:
+                logger.warning("Não foi possível remover a constraint antiga, talvez ela já tenha sido modificada")
+                
+            try:
+                cursor.execute("""
+                    ALTER TABLE dropi_metrics 
+                    ADD PRIMARY KEY (store_id, date, product, product_instance_id)
+                """)
+            except:
+                logger.warning("Não foi possível adicionar a nova primary key, talvez ela já exista")
+        
+        conn.commit()
+        logger.info("Esquema da tabela dropi_metrics atualizado para suportar produtos duplicados")
+        return True
+    except Exception as e:
+        logger.error(f"Erro ao atualizar esquema: {str(e)}")
+        conn.rollback()
+        return False
+    finally:
+        conn.close()
+
 def delete_store_by_id(store_id):
     """
     Remove uma loja e todos os seus dados relacionados do banco de dados.

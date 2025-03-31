@@ -28,7 +28,7 @@ try:
     from db_utils import (
         init_db, get_db_connection, execute_query, execute_upsert, 
         load_stores, get_store_details, save_store, get_store_currency,
-        save_effectiveness, is_railway_environment
+        save_effectiveness, is_railway_environment, update_dropi_metrics_schema_for_duplicates
     )
 except ImportError as e:
     st.error(f"Erro ao importar módulos: {str(e)}")
@@ -1710,76 +1710,26 @@ def save_dropi_metrics_to_db(store_id, date_str, products_data, start_date_str=N
     if not end_date_str:
         end_date_str = date_str
     
-    # PRIMEIRA ETAPA: Verificar e adicionar a coluna image_url se necessário
-    conn = None
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        
-        # Verificar se a coluna image_url existe
-        column_exists = False
-        try:
-            # Tente fazer um select para ver se a coluna existe
-            cursor.execute("SELECT image_url FROM dropi_metrics LIMIT 1")
-            column_exists = True
-        except:
-            logger.info("Coluna image_url não encontrada. Tentando adicionar...")
-            
-        if not column_exists:
-            try:
-                # Adicionar a coluna
-                if is_railway_environment():
-                    cursor.execute("ALTER TABLE dropi_metrics ADD COLUMN image_url TEXT")
-                else:
-                    cursor.execute("ALTER TABLE dropi_metrics ADD COLUMN image_url TEXT")
-                conn.commit()
-                logger.info("Coluna image_url adicionada com sucesso")
-            except Exception as e:
-                logger.error(f"Erro ao adicionar coluna: {str(e)}")
-                conn.rollback()
-        
-        cursor.close()
-        conn.close()
-    except Exception as e:
-        logger.error(f"Erro ao verificar/adicionar coluna: {str(e)}")
-        if conn:
-            try:
-                conn.rollback()
-                conn.close()
-            except:
-                pass
+    # Verificar e atualizar o esquema para permitir produtos duplicados
+    update_dropi_metrics_schema_for_duplicates()
     
-    # SEGUNDA ETAPA: Remover dados existentes para o período
+    # Remove dados existentes para o período
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
         
-        # Delete existing records for the date range
         if is_railway_environment():
             cursor.execute("""
                 DELETE FROM dropi_metrics 
-                WHERE store_id = %s AND date = %s
-            """, (store_id, date_str))
-            
-            if start_date_str and end_date_str:
-                cursor.execute("""
-                    DELETE FROM dropi_metrics 
-                    WHERE store_id = %s AND date_start = %s AND date_end = %s
-                """, (store_id, start_date_str, end_date_str))
+                WHERE store_id = %s AND date_start = %s AND date_end = %s
+            """, (store_id, start_date_str, end_date_str))
         else:
             cursor.execute("""
                 DELETE FROM dropi_metrics 
-                WHERE store_id = ? AND date = ?
-            """, (store_id, date_str))
-            
-            if start_date_str and end_date_str:
-                cursor.execute("""
-                    DELETE FROM dropi_metrics 
-                    WHERE store_id = ? AND date_start = ? AND date_end = ?
-                """, (store_id, start_date_str, end_date_str))
+                WHERE store_id = ? AND date_start = ? AND date_end = ?
+            """, (store_id, start_date_str, end_date_str))
         
         conn.commit()
-        logger.info(f"Dados antigos removidos para o período {start_date_str} a {end_date_str}")
         cursor.close()
         conn.close()
     except Exception as e:
@@ -1791,35 +1741,34 @@ def save_dropi_metrics_to_db(store_id, date_str, products_data, start_date_str=N
             except:
                 pass
     
-    # IMPORTANTE: REMOVER A ETAPA DE AGRUPAMENTO DE PRODUTOS DUPLICADOS
-    # Agora vamos tratar cada produto como único, mesmo se tiver o mesmo nome
-    
-    # INSERIR OS DADOS - cada produto separadamente
+    # Inserir os dados - cada produto com um ID de instância único
     saved_count = 0
+    import uuid
+    
     for product in products_data:
         try:
-            # Obter o nome do produto para log
             product_name = product.get("product", "")
             if not product_name:
                 continue
                 
-            # Use raw SQL para maior controle e debug
+            # Gerar ID único para cada instância de produto
+            product_instance_id = str(uuid.uuid4())
+            
             conn = get_db_connection()
             cursor = conn.cursor()
             
-            # Insert with all fields explicitly defined
             if is_railway_environment():
                 cursor.execute("""
                     INSERT INTO dropi_metrics (
-                        store_id, date, date_start, date_end, product, provider, stock,
+                        store_id, date, date_start, date_end, product, product_instance_id, provider, stock,
                         orders_count, orders_value, transit_count, transit_value,
                         delivered_count, delivered_value, profits, image_url
                     ) VALUES (
-                        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+                        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
                     )
                 """, (
                     store_id, date_str, start_date_str, end_date_str, 
-                    product_name, product.get("provider", ""), product.get("stock", 0),
+                    product_name, product_instance_id, product.get("provider", ""), product.get("stock", 0),
                     product.get("orders_count", 0), product.get("orders_value", 0),
                     product.get("transit_count", 0), product.get("transit_value", 0),
                     product.get("delivered_count", 0), product.get("delivered_value", 0),
@@ -1828,23 +1777,18 @@ def save_dropi_metrics_to_db(store_id, date_str, products_data, start_date_str=N
             else:
                 cursor.execute("""
                     INSERT INTO dropi_metrics (
-                        store_id, date, date_start, date_end, product, provider, stock,
+                        store_id, date, date_start, date_end, product, product_instance_id, provider, stock,
                         orders_count, orders_value, transit_count, transit_value,
                         delivered_count, delivered_value, profits, image_url
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
                     store_id, date_str, start_date_str, end_date_str, 
-                    product_name, product.get("provider", ""), product.get("stock", 0),
+                    product_name, product_instance_id, product.get("provider", ""), product.get("stock", 0),
                     product.get("orders_count", 0), product.get("orders_value", 0),
                     product.get("transit_count", 0), product.get("transit_value", 0),
                     product.get("delivered_count", 0), product.get("delivered_value", 0),
                     product.get("profits", 0), product.get("image_url", "")
                 ))
-            
-            # Log the values for debugging
-            logger.info(f"Salvando produto: {product_name}")
-            logger.info(f"  Image URL: {product.get('image_url', '')}")
-            logger.info(f"  Stock: {product.get('stock', 0)}")
             
             conn.commit()
             saved_count += 1
