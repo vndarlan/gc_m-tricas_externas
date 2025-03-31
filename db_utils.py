@@ -150,9 +150,21 @@ def init_db():
                     dropi_username TEXT,
                     dropi_password TEXT,
                     currency_from TEXT DEFAULT 'MXN',
-                    currency_to TEXT DEFAULT 'BRL'
+                    currency_to TEXT DEFAULT 'BRL',
+                    is_custom BOOLEAN DEFAULT FALSE
                 )
             """)
+            
+            # Verificar se a coluna is_custom existe
+            try:
+                cursor.execute("""
+                    SELECT column_name FROM information_schema.columns 
+                    WHERE table_name = 'stores' AND column_name = 'is_custom'
+                """)
+                if not cursor.fetchone():
+                    cursor.execute("ALTER TABLE stores ADD COLUMN is_custom BOOLEAN DEFAULT FALSE")
+            except Exception as e:
+                logger.error(f"Erro ao verificar coluna is_custom: {str(e)}")
             
             # Tabela para métricas de produtos
             cursor.execute("""
@@ -198,6 +210,18 @@ def init_db():
                     PRIMARY KEY (store_id, product)
                 )
             """)
+            
+            # Tabela para valores personalizados
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS custom_product_data (
+                    store_id TEXT,
+                    product TEXT,
+                    custom_id TEXT,
+                    custom_provider TEXT,
+                    last_updated TEXT,
+                    PRIMARY KEY (store_id, product)
+                )
+            """)
         else:
             # SQLite
             cursor.execute("""
@@ -210,9 +234,19 @@ def init_db():
                     dropi_username TEXT,
                     dropi_password TEXT,
                     currency_from TEXT DEFAULT 'MXN',
-                    currency_to TEXT DEFAULT 'BRL'
+                    currency_to TEXT DEFAULT 'BRL',
+                    is_custom INTEGER DEFAULT 0
                 )
             """)
+            
+            # Verificar se a coluna is_custom existe
+            try:
+                cursor.execute("PRAGMA table_info(stores)")
+                columns = [column[1] for column in cursor.fetchall()]
+                if 'is_custom' not in columns:
+                    cursor.execute("ALTER TABLE stores ADD COLUMN is_custom INTEGER DEFAULT 0")
+            except Exception as e:
+                logger.error(f"Erro ao verificar coluna is_custom: {str(e)}")
             
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS product_metrics (
@@ -255,6 +289,18 @@ def init_db():
                     PRIMARY KEY (store_id, product)
                 )
             """)
+            
+            # Tabela para valores personalizados
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS custom_product_data (
+                    store_id TEXT,
+                    product TEXT,
+                    custom_id TEXT,
+                    custom_provider TEXT,
+                    last_updated TEXT,
+                    PRIMARY KEY (store_id, product)
+                )
+            """)
         
         conn.commit()
         logger.info("Banco de dados inicializado com sucesso")
@@ -283,7 +329,7 @@ def get_store_details(store_id):
     """Obtém os detalhes de uma loja específica."""
     try:
         result = execute_query(
-            "SELECT name, shop_name, access_token, dropi_url, dropi_username, dropi_password, currency_from, currency_to FROM stores WHERE id = ?", 
+            "SELECT name, shop_name, access_token, dropi_url, dropi_username, dropi_password, currency_from, currency_to, is_custom FROM stores WHERE id = ?", 
             (store_id,), 
             fetch_type='one'
         )
@@ -298,6 +344,7 @@ def get_store_details(store_id):
                 "dropi_password": result[5],
                 "currency_from": result[6] or "MXN",
                 "currency_to": result[7] or "BRL",
+                "is_custom": bool(result[8]),
                 "id": store_id
             }
         return None
@@ -305,7 +352,7 @@ def get_store_details(store_id):
         logger.error(f"Erro ao obter detalhes da loja: {str(e)}")
         return None
 
-def save_store(name, shop_name, access_token, dropi_url="", dropi_username="", dropi_password="", currency_from="MXN", currency_to="BRL"):
+def save_store(name, shop_name, access_token, dropi_url="", dropi_username="", dropi_password="", currency_from="MXN", currency_to="BRL", is_custom=False):
     """Salva uma nova loja no banco de dados."""
     import uuid
     store_id = str(uuid.uuid4())
@@ -319,7 +366,8 @@ def save_store(name, shop_name, access_token, dropi_url="", dropi_username="", d
         "dropi_username": dropi_username,
         "dropi_password": dropi_password,
         "currency_from": currency_from,
-        "currency_to": currency_to
+        "currency_to": currency_to,
+        "is_custom": is_custom
     }
     
     try:

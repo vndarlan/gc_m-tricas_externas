@@ -134,6 +134,14 @@ def init_db():
         c.execute("ALTER TABLE stores ADD COLUMN currency_to TEXT DEFAULT 'BRL'")
         st.success("Banco de dados atualizado com sucesso para suporte a moedas!")
     
+    # Verificar e adicionar campo is_custom para lojas
+    try:
+        c.execute("SELECT is_custom FROM stores LIMIT 1")
+    except sqlite3.OperationalError:
+        st.info("Atualizando estrutura do banco de dados para personalização...")
+        c.execute("ALTER TABLE stores ADD COLUMN is_custom INTEGER DEFAULT 0")
+        st.success("Banco de dados atualizado com sucesso para personalização!")
+    
     # Criar tabela para métricas da Dropi
     c.execute("""
         CREATE TABLE IF NOT EXISTS dropi_metrics (
@@ -164,9 +172,65 @@ def init_db():
         )
     """)
     
+    # Criar tabela para dados personalizados
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS custom_product_data (
+            store_id TEXT,
+            product TEXT,
+            custom_id TEXT,
+            custom_provider TEXT,
+            last_updated TEXT,
+            PRIMARY KEY (store_id, product)
+        )
+    """)
+    
     # Confirmar todas as alterações e fechar a conexão
     conn.commit()
     conn.close()
+
+# Funções para manipular dados personalizados
+def get_custom_product_data(store_id):
+    """Obtém os dados personalizados dos produtos de uma loja."""
+    try:
+        query = "SELECT product, custom_id, custom_provider FROM custom_product_data WHERE store_id = ?"
+        
+        if is_railway_environment():
+            query = query.replace("?", "%s")
+            
+        result = execute_query(query, (store_id,), fetch_type='all')
+        
+        custom_data = {}
+        if result:
+            for row in result:
+                product = row[0]
+                custom_data[product] = {
+                    "custom_id": row[1],
+                    "custom_provider": row[2]
+                }
+        
+        return custom_data
+    except Exception as e:
+        logger.error(f"Erro ao obter dados personalizados: {str(e)}")
+        return {}
+
+def save_custom_product_data(store_id, product, custom_id, custom_provider):
+    """Salva dados personalizados para um produto."""
+    try:
+        current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        
+        data = {
+            "store_id": store_id,
+            "product": product,
+            "custom_id": custom_id,
+            "custom_provider": custom_provider,
+            "last_updated": current_time
+        }
+        
+        execute_upsert("custom_product_data", data, ["store_id", "product"])
+        return True
+    except Exception as e:
+        logger.error(f"Erro ao salvar dados personalizados: {str(e)}")
+        return False
 
 # Carregar lista de lojas
 def load_stores():
@@ -1810,6 +1874,196 @@ def save_dropi_metrics_to_db(store_id, date_str, products_data, start_date_str=N
     logger.info(f"Total de {saved_count} produtos salvos com sucesso de {len(product_names)}")
     return saved_count > 0
 
+# Função para exibir tabela de produtos Dropi com campos personalizáveis
+def display_dropi_table_with_custom_fields(store_id, dropi_data, currency_to):
+    """Exibe a tabela de produtos Dropi com campos personalizáveis."""
+    # Obter dados personalizados
+    custom_data = get_custom_product_data(store_id)
+    
+    # Criar uma cópia do DataFrame para edição
+    display_df = dropi_data.drop(columns=['date'], errors='ignore')
+    
+    # Ordenar por orders_count (maior para menor)
+    display_df = display_df.sort_values('orders_count', ascending=False)
+    
+    # Adicionar colunas personalizadas
+    display_df['custom_id'] = ""
+    
+    # Preencher com valores salvos
+    for idx, row in display_df.iterrows():
+        product = row['product']
+        if product in custom_data:
+            display_df.at[idx, 'custom_id'] = custom_data[product].get('custom_id', '')
+            # Se o fornecedor personalizado estiver definido, substituir o valor original
+            if custom_data[product].get('custom_provider'):
+                display_df.at[idx, 'provider'] = custom_data[product].get('custom_provider', '')
+    
+    # Reorganizar colunas
+    if 'image_url' in display_df.columns:
+        cols = display_df.columns.tolist()
+        cols.remove('image_url')
+        # Colocar custom_id logo após o produto e antes do provider
+        new_cols = []
+        for col in cols:
+            new_cols.append(col)
+            if col == 'product':
+                new_cols.append('custom_id')
+        # Remover custom_id da sua posição original
+        new_cols.remove('custom_id')
+        # Colocar image_url como primeira coluna
+        cols = ['image_url'] + new_cols
+        display_df = display_df[cols]
+    else:
+        # Ordenar colunas sem imagem
+        cols = display_df.columns.tolist()
+        # Colocar custom_id logo após o produto
+        new_cols = []
+        for col in cols:
+            new_cols.append(col)
+            if col == 'product':
+                new_cols.append('custom_id')
+        # Remover custom_id da sua posição original
+        new_cols.remove('custom_id')
+        display_df = display_df[new_cols]
+    
+    # Criar editor de dados
+    edited_df = st.data_editor(
+        display_df,
+        column_config={
+            "store_id": None,  # Ocultar esta coluna
+            "image_url": st.column_config.ImageColumn("Imagem", help="Imagem do produto"),
+            "date_start": st.column_config.TextColumn("Data Inicial"),
+            "date_end": st.column_config.TextColumn("Data Final"),
+            "product": "Produto",
+            "custom_id": st.column_config.TextColumn("ID", help="Identificador personalizado"),
+            "provider": st.column_config.TextColumn("Fornecedor", help="Fornecedor do produto"),
+            "stock": "Estoque",
+            "orders_count": "Pedidos",
+            "orders_value": st.column_config.NumberColumn(f"Valor Pedidos ({currency_to})", format="%.2f"),
+            "transit_count": "Em Trânsito",
+            "transit_value": st.column_config.NumberColumn(f"Valor Trânsito ({currency_to})", format="%.2f"),
+            "delivered_count": "Entregues",
+            "delivered_value": st.column_config.NumberColumn(f"Valor Entregues ({currency_to})", format="%.2f"),
+            "profits": st.column_config.NumberColumn(f"Lucros ({currency_to})", format="%.2f")
+        },
+        disabled=["store_id", "image_url", "date_start", "date_end", "product", 
+                 "stock", "orders_count", "orders_value", "transit_count", 
+                 "transit_value", "delivered_count", "delivered_value", "profits"],
+        use_container_width=True,
+        key="custom_dropi_products_table"
+    )
+    
+    # Verificar se houve alterações e salvar
+    if not edited_df.equals(display_df):
+        st.info("Detectadas alterações nos dados personalizados. Salvando...")
+        for idx, row in edited_df.iterrows():
+            product = row['product']
+            custom_id = row['custom_id']
+            custom_provider = row['provider']
+            
+            # Verificar se é diferente do que estava no display_df
+            original_id = display_df.loc[display_df['product'] == product, 'custom_id'].iloc[0]
+            original_provider = display_df.loc[display_df['product'] == product, 'provider'].iloc[0]
+            
+            if custom_id != original_id or custom_provider != original_provider:
+                success = save_custom_product_data(store_id, product, custom_id, custom_provider)
+                if success:
+                    st.success(f"Dados personalizados salvos para: {product}")
+                else:
+                    st.error(f"Erro ao salvar dados personalizados para: {product}")
+    
+    return edited_df
+
+# Atualizar função update_dropi_data_silent para preservar dados personalizados
+def update_dropi_data_silent(store, start_date, end_date):
+    """Atualiza os dados da Dropi sem exibir feedback de progresso."""
+    # Configurar o driver Selenium
+    driver = setup_selenium(headless=True)
+    
+    if not driver:
+        return False
+    
+    try:
+        # Converter datas para strings
+        start_date_str = start_date.strftime("%Y-%m-%d")
+        end_date_str = end_date.strftime("%Y-%m-%d")
+        
+        # Data de referência é a mesma da final (mantido para compatibilidade)
+        date_str = end_date_str
+        
+        logger.info(f"Buscando dados Dropi para o período: {start_date_str} a {end_date_str}")
+        
+        # Fazer login no Dropi
+        success = login(driver, store["dropi_username"], store["dropi_password"], logger, store["dropi_url"])
+        
+        if not success:
+            driver.quit()
+            return False
+        
+        # Navegar para o relatório de produtos vendidos
+        if not navigate_to_product_sold(driver, logger):
+            driver.quit()
+            return False
+        
+        # Selecionar intervalo de datas específicas
+        if not select_date_range(driver, start_date, end_date, logger):
+            driver.quit()
+            return False
+        
+        # Extrair dados dos produtos
+        product_data = extract_product_data(driver, logger)
+        
+        if not product_data:
+            driver.quit()
+            return False
+        
+        # Verificar se a loja está no modo personalizado
+        is_custom = store.get("is_custom", False)
+        
+        if is_custom:
+            # Obter os dados personalizados antes de limpar
+            custom_data = get_custom_product_data(store["id"])
+            
+            # Para cada produto nos novos dados, preservar os valores personalizados
+            for product in product_data:
+                product_name = product.get("product", "")
+                if product_name in custom_data:
+                    # Usar o fornecedor personalizado se existir
+                    if custom_data[product_name].get("custom_provider"):
+                        product["provider"] = custom_data[product_name]["custom_provider"]
+        
+        # Limpar dados antigos e salvar os novos - agora com datas inicial e final
+        save_dropi_metrics_to_db(store["id"], date_str, product_data, start_date_str, end_date_str)
+        
+        # Verificar após salvar (depuração)
+        try:
+            from db_utils import execute_query
+            result = execute_query(
+                """
+                SELECT COUNT(*) FROM dropi_metrics 
+                WHERE store_id = ? 
+                  AND date_start = ? 
+                  AND date_end = ?
+                """, 
+                (store["id"], start_date_str, end_date_str),
+                fetch_type='one'
+            )
+            count = result[0] if result else 0
+            logger.info(f"Verificação: {count} produtos salvos no banco para o período {start_date_str} a {end_date_str}")
+        except Exception as e:
+            logger.error(f"Erro na verificação de contagem: {str(e)}")
+        
+        driver.quit()
+        return True
+            
+    except Exception as e:
+        logger.error(f"Erro ao atualizar dados da Dropi: {str(e)}")
+        try:
+            driver.quit()
+        except:
+            pass
+        return False
+
 # === FUNÇÕES PARA O LAYOUT MELHORADO ===
 
 def display_sidebar_filters(store):
@@ -2443,81 +2697,7 @@ def display_effectiveness_table(store_id, start_date_str, end_date_str):
     else:
         # MODIFICAÇÃO: Removida a mensagem de aviso que estava duplicada
         pass  # Não exibe nenhuma mensagem quando não há dados
-        
-def update_dropi_data_silent(store, start_date, end_date):
-    """Atualiza os dados da Dropi sem exibir feedback de progresso."""
-    # Configurar o driver Selenium
-    driver = setup_selenium(headless=True)
-    
-    if not driver:
-        return False
-    
-    try:
-        # Converter datas para strings
-        start_date_str = start_date.strftime("%Y-%m-%d")
-        end_date_str = end_date.strftime("%Y-%m-%d")
-        
-        # Data de referência é a mesma da final (mantido para compatibilidade)
-        date_str = end_date_str
-        
-        logger.info(f"Buscando dados Dropi para o período: {start_date_str} a {end_date_str}")
-        
-        # Fazer login no Dropi
-        success = login(driver, store["dropi_username"], store["dropi_password"], logger, store["dropi_url"])
-        
-        if not success:
-            driver.quit()
-            return False
-        
-        # Navegar para o relatório de produtos vendidos
-        if not navigate_to_product_sold(driver, logger):
-            driver.quit()
-            return False
-        
-        # Selecionar intervalo de datas específicas
-        if not select_date_range(driver, start_date, end_date, logger):
-            driver.quit()
-            return False
-        
-        # Extrair dados dos produtos
-        product_data = extract_product_data(driver, logger)
-        
-        if not product_data:
-            driver.quit()
-            return False
-        
-        # Limpar dados antigos e salvar os novos - agora com datas inicial e final
-        save_dropi_metrics_to_db(store["id"], date_str, product_data, start_date_str, end_date_str)
-        
-        # Verificar após salvar (depuração)
-        try:
-            from db_utils import execute_query
-            result = execute_query(
-                """
-                SELECT COUNT(*) FROM dropi_metrics 
-                WHERE store_id = ? 
-                  AND date_start = ? 
-                  AND date_end = ?
-                """, 
-                (store["id"], start_date_str, end_date_str),
-                fetch_type='one'
-            )
-            count = result[0] if result else 0
-            logger.info(f"Verificação: {count} produtos salvos no banco para o período {start_date_str} a {end_date_str}")
-        except Exception as e:
-            logger.error(f"Erro na verificação de contagem: {str(e)}")
-        
-        driver.quit()
-        return True
-            
-    except Exception as e:
-        logger.error(f"Erro ao atualizar dados da Dropi: {str(e)}")
-        try:
-            driver.quit()
-        except:
-            pass
-        return False
-    
+
 def store_dashboard(store):
     """Exibe o dashboard para a loja selecionada com o novo layout."""
     # Configurações da Shopify
@@ -2533,9 +2713,6 @@ def store_dashboard(store):
     
     # Título principal com estilo aprimorado
     st.markdown(f'<h1>Métricas de Produtos {store["name"]}</h1>', unsafe_allow_html=True)
-    
-    # Adicionar containers de seção principal para agrupar conteúdo
-    #st.markdown('<div class="main-section">', unsafe_allow_html=True)
     
     # Definir valores padrão para datas - no início da função para garantir disponibilidade
     default_start_date = datetime.today() - timedelta(days=7)
@@ -3009,6 +3186,17 @@ def store_dashboard(store):
         else:
             st.error("Erro ao atualizar dados da Dropi.")
     
+    # ========== SEÇÃO DE ANÁLISE DE EFETIVIDADE ==========
+    # A seção de análise de efetividade agora vem LOGO APÓS os filtros de Dropi
+    # e ANTES da exibição de dados do Dropi
+    st.markdown('<h4>ANÁLISE DE EFETIVIDADE</h4>', unsafe_allow_html=True)
+    
+    # Exibir tabela de efetividade para o intervalo selecionado
+    display_effectiveness_table(store["id"], dropi_start_date_str, dropi_end_date_str)
+    
+    # Linha divisória entre as seções
+    st.markdown('<hr>', unsafe_allow_html=True)
+
     # ========== EXIBIÇÃO DE DADOS DROPI ==========
     # Buscar dados da Dropi
     conn = get_db_connection()
@@ -3085,17 +3273,6 @@ def store_dashboard(store):
         
         st.markdown('</div>', unsafe_allow_html=True)
 
-    # ========== SEÇÃO DE ANÁLISE DE EFETIVIDADE ==========
-    # A seção de análise de efetividade agora vem LOGO APÓS os filtros de Dropi
-    # e ANTES da exibição de dados do Dropi
-    st.markdown('<h4>ANÁLISE DE EFETIVIDADE</h4>', unsafe_allow_html=True)
-    
-    # Exibir tabela de efetividade para o intervalo selecionado
-    display_effectiveness_table(store["id"], dropi_start_date_str, dropi_end_date_str)
-    
-    # Linha divisória entre as seções
-    st.markdown('<hr>', unsafe_allow_html=True)
-
     # Crie colunas para a tabela e o gráfico lado a lado
     dropi_col1, dropi_col2 = st.columns(2)
 
@@ -3104,40 +3281,45 @@ def store_dashboard(store):
         if not dropi_data.empty:
             st.subheader("Produtos Dropi")
             
-            # Primeiro, criar uma cópia do DataFrame sem a coluna 'date'
-            display_df = dropi_data.drop(columns=['date'], errors='ignore')
-            
-            # Ordenar por orders_count (maior para menor)
-            display_df = display_df.sort_values('orders_count', ascending=False)
-            
-            # Reorganizar colunas para mostrar imagem primeiro se existir
-            if 'image_url' in display_df.columns:
-                cols = display_df.columns.tolist()
-                cols.remove('image_url')
-                cols = ['image_url'] + cols
-                display_df = display_df[cols]
-            
-            st.dataframe(
-                display_df,
-                column_config={
-                    "store_id": None,  # Ocultar esta coluna
-                    "image_url": st.column_config.ImageColumn("Imagem", help="Imagem do produto"),
-                    "date_start": st.column_config.TextColumn("Data Inicial"),
-                    "date_end": st.column_config.TextColumn("Data Final"),
-                    "product": "Produto",
-                    "provider": "Fornecedor",
-                    "stock": "Estoque",
-                    "orders_count": "Pedidos",
-                    "orders_value": st.column_config.NumberColumn(f"Valor Pedidos ({currency_to})", format="%.2f"),
-                    "transit_count": "Em Trânsito",
-                    "transit_value": st.column_config.NumberColumn(f"Valor Trânsito ({currency_to})", format="%.2f"),
-                    "delivered_count": "Entregues",
-                    "delivered_value": st.column_config.NumberColumn(f"Valor Entregues ({currency_to})", format="%.2f"),
-                    "profits": st.column_config.NumberColumn(f"Lucros ({currency_to})", format="%.2f")
-                },
-                use_container_width=True,
-                key="dropi_products_table"
-            )
+            # Verificar se a loja está no modo personalizado
+            if store.get("is_custom", False):
+                # Usar a função de tabela personalizável
+                display_dropi_table_with_custom_fields(store["id"], dropi_data, currency_to)
+            else:
+                # Primeiro, criar uma cópia do DataFrame sem a coluna 'date'
+                display_df = dropi_data.drop(columns=['date'], errors='ignore')
+                
+                # Ordenar por orders_count (maior para menor)
+                display_df = display_df.sort_values('orders_count', ascending=False)
+                
+                # Reorganizar colunas para mostrar imagem primeiro se existir
+                if 'image_url' in display_df.columns:
+                    cols = display_df.columns.tolist()
+                    cols.remove('image_url')
+                    cols = ['image_url'] + cols
+                    display_df = display_df[cols]
+                
+                st.dataframe(
+                    display_df,
+                    column_config={
+                        "store_id": None,  # Ocultar esta coluna
+                        "image_url": st.column_config.ImageColumn("Imagem", help="Imagem do produto"),
+                        "date_start": st.column_config.TextColumn("Data Inicial"),
+                        "date_end": st.column_config.TextColumn("Data Final"),
+                        "product": "Produto",
+                        "provider": "Fornecedor",
+                        "stock": "Estoque",
+                        "orders_count": "Pedidos",
+                        "orders_value": st.column_config.NumberColumn(f"Valor Pedidos ({currency_to})", format="%.2f"),
+                        "transit_count": "Em Trânsito",
+                        "transit_value": st.column_config.NumberColumn(f"Valor Trânsito ({currency_to})", format="%.2f"),
+                        "delivered_count": "Entregues",
+                        "delivered_value": st.column_config.NumberColumn(f"Valor Entregues ({currency_to})", format="%.2f"),
+                        "profits": st.column_config.NumberColumn(f"Lucros ({currency_to})", format="%.2f")
+                    },
+                    use_container_width=True,
+                    key="dropi_products_table"
+                )
 
     with dropi_col2:
         # Exibir gráfico interativo para os dados Dropi

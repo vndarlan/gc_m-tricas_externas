@@ -554,6 +554,9 @@ def handle_store_selection(selected_option, stores):
         dropi_username = st.text_input("Email/Usuário:")
         dropi_password = st.text_input("Senha:", type="password")
         
+        # Opção Personalizado
+        is_custom = st.checkbox("Personalizado", help="Ativa campos personalizáveis como ID e Fornecedor")
+        
         # Currency fields
         st.markdown("#### Configurações de Moeda")
         currencies = {
@@ -594,7 +597,8 @@ def handle_store_selection(selected_option, stores):
                         dropi_username, 
                         dropi_password,
                         currency_from,
-                        currency_to
+                        currency_to,
+                        is_custom
                     )
                     
                     if saved_id:
