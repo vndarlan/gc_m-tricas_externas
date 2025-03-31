@@ -3190,9 +3190,6 @@ def store_dashboard(store):
     # Exibir tabela de efetividade para o intervalo selecionado
     display_effectiveness_table(store["id"], dropi_start_date_str, dropi_end_date_str)
     
-    # Linha divisória entre as seções
-    st.markdown('<hr>', unsafe_allow_html=True)
-
     # Exibir apenas a tabela de produtos Dropi
     if not dropi_data.empty:
         st.subheader("Produtos Dropi")
@@ -3257,3 +3254,6 @@ if selected_store:
 else:
     # Tela inicial quando nenhuma loja está selecionada
     st.write("Selecione uma loja no menu lateral ou cadastre uma nova para começar.")
+
+# Linha divisória entre as seções
+st.markdown('<hr>', unsafe_allow_html=True)
