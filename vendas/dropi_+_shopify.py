@@ -2552,7 +2552,7 @@ def display_effectiveness_table(store_id, start_date_str, end_date_str):
         # Exibir tabela estilizada completa (não editável)
         st.dataframe(
             styled_view,
-            height=10000,
+            height=0,
             column_config={
                 "image_url": st.column_config.ImageColumn("Imagem", help="Imagem do produto"),
                 "product_display": "Produto",
